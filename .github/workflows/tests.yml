@@ -2,6 +2,7 @@ name: Test Suites
 
 # We are a reusable Workflow only
 on:
+  workflow_dispatch:
   workflow_call:
     secrets:
       SLACK_WEBHOOK_URL:
