@@ -2,7 +2,7 @@
     "name":"cborm-lucee@6",
     "app":{
         "serverHomeDirectory":".engine/lucee6",
-        "cfengine":"lucee@6"
+        "cfengine":"lucee@6.2.1-SNAPSHOT+97"
     },
     "web":{
         "http":{
