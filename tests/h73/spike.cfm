@@ -448,6 +448,46 @@ try {
 	check( "scenario 30 didn't throw", false, e.message & " :: " & e.detail );
 }
 
+systemOutput( "[scenario 31] withClause on LEFT join — ON-clause keeps all left rows", true );
+try {
+	r = new cborm.models.criterion.jpa.Restrictions();
+
+	// Sanity: same predicate in WHERE drops to 2 admin users (LEFT becomes effectively INNER).
+	cb = new cborm.models.criterion.jpa.CriteriaBuilder( entityName="User", ormSession=hbSession );
+	whereCount = cb
+		.joinTo( "role", "rw", cb.LEFT_JOIN )
+		.eq( "rw.name", "admin" )
+		.list().len();
+	check( "LEFT join + WHERE name=admin drops to 2", whereCount eq 2, "got " & whereCount );
+
+	// withClause: same predicate in ON keeps all 7 left rows (role null for non-admins).
+	cb = new cborm.models.criterion.jpa.CriteriaBuilder( entityName="User", ormSession=hbSession );
+	onCount = cb
+		.joinTo(
+			associationName = "role",
+			alias           = "ro",
+			joinType        = cb.LEFT_JOIN,
+			withClause      = r.isEq( "ro.name", "admin" )
+		)
+		.list().len();
+	check( "LEFT join + ON name=admin keeps all 7 users", onCount eq 7, "got " & onCount );
+} catch ( any e ) {
+	check( "scenario 31 didn't throw", false, e.message & " :: " & e.detail );
+}
+
+systemOutput( "[scenario 32] withClause referencing alias path resolves correctly", true );
+try {
+	r = new cborm.models.criterion.jpa.Restrictions();
+	cb = new cborm.models.criterion.jpa.CriteriaBuilder( entityName="User", ormSession=hbSession );
+	got = cb
+		.joinTo( "role", "r", cb.INNER_JOIN, r.isEq( "r.name", "admin" ) )
+		.list();
+	// INNER + ON name=admin → only admin matches → 2 users
+	check( "INNER + withClause filters to 2 admins", got.len() eq 2, "got " & got.len() );
+} catch ( any e ) {
+	check( "scenario 32 didn't throw", false, e.message );
+}
+
 // ---------- summary ----------
 
 systemOutput( "", true );

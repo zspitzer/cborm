@@ -125,19 +125,25 @@ component accessors="true" {
 	 * Register an explicit JPA Join with a named alias and a chosen JoinType.
 	 * Both `alias.field` and `associationName.field` paths resolve to the same physical join afterwards.
 	 *
-	 * @associationName Property path on the root entity, e.g. "role"
+	 * @associationName Property path on the root entity, e.g. "role" or "role.org"
 	 * @alias           Alias name for use in subsequent paths, e.g. "r"
 	 * @joinType        One of this.INNER_JOIN | this.LEFT_JOIN | this.RIGHT_JOIN (default INNER)
+	 * @withClause      Optional descriptor — additional ON-clause restriction. Distinct from
+	 *                  WHERE: an ON-clause filter on a LEFT join keeps the left-side rows but
+	 *                  nulls the joined columns; in WHERE the rows would be eliminated.
 	 */
 	function createAlias(
 		required string associationName,
 		required string alias,
-		string          joinType = this.INNER_JOIN
+		string          joinType = this.INNER_JOIN,
+		any             withClause
 	) {
-		variables.aliases[ arguments.alias ] = {
+		var spec = {
 			"path"     : arguments.associationName,
 			"joinType" : arguments.joinType
 		};
+		if ( !isNull( arguments.withClause ) ) spec[ "withClause" ] = arguments.withClause;
+		variables.aliases[ arguments.alias ] = spec;
 		return this;
 	}
 
@@ -145,7 +151,8 @@ component accessors="true" {
 	function joinTo(
 		required string associationName,
 		required string alias,
-		string          joinType = this.INNER_JOIN
+		string          joinType = this.INNER_JOIN,
+		any             withClause
 	) {
 		return createAlias( argumentCollection = arguments );
 	}
@@ -285,6 +292,8 @@ component accessors="true" {
 			pathResolver = subPathResolver
 		);
 
+		subPathResolver.applyWithClauses( subAssembler );
+
 		// SELECT clause: subqueries must select exactly one expression. Use the first
 		// projection if the user set one (typical: count="id" or property="id"); otherwise
 		// fall back to selecting the root entity (ie. `select e from Entity e where ...`).
@@ -312,6 +321,8 @@ component accessors="true" {
 		var pathResolver = new PathResolver( root = root, aliases = variables.aliases );
 		var assembler    = new JPAAssembler( cb = hbCb, cq = cq, root = root, pathResolver = pathResolver );
 
+		pathResolver.applyWithClauses( assembler );
+
 		cq.select( hbCb.count( root ) );
 		applyWhere( cq, hbCb, assembler );
 
@@ -333,6 +344,11 @@ component accessors="true" {
 		var root         = cq.from( variables.entityType );
 		var pathResolver = new PathResolver( root = root, aliases = variables.aliases );
 		var assembler    = new JPAAssembler( cb = hbCb, cq = cq, root = root, pathResolver = pathResolver );
+
+		// Resolve aliasable withClause descriptors to JPA predicates and attach them
+		// to their joins via Join.on(...). Done before any other descriptor walk so
+		// downstream paths can reference these joins safely.
+		pathResolver.applyWithClauses( assembler );
 
 		if ( hasProjections ) {
 			var selections = variables.projections.map( function( p ) {

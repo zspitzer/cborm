@@ -22,9 +22,11 @@
 component {
 
 	PathResolver function init( required root, struct aliases = {} ) {
-		variables.root               = arguments.root;
-		variables.joins              = {};
-		variables.projectionAliases  = {};   // populated post-init by CriteriaBuilder
+		variables.root              = arguments.root;
+		variables.joins             = {};
+		variables.aliases           = arguments.aliases;   // retained for applyWithClauses
+		variables.aliasFinalNode    = {};                  // alias -> last Join in its chain
+		variables.projectionAliases = {};                  // populated post-init by CriteriaBuilder
 
 		var jpaJoinTypes = createObject( "java", "jakarta.persistence.criteria.JoinType" );
 
@@ -47,10 +49,26 @@ component {
 			}
 
 			// Alias resolves to the FINAL join node in the chain
-			variables.joins[ aliasName ] = current;
+			variables.joins[ aliasName ]          = current;
+			variables.aliasFinalNode[ aliasName ] = current;
 		}
 
 		return this;
+	}
+
+	/**
+	 * Apply withClause descriptors to their corresponding Joins via Join.on(predicate).
+	 * Run after the assembler is constructed so we can resolve the descriptor against
+	 * this same PathResolver (the withClause typically references the alias's own path).
+	 */
+	void function applyWithClauses( required assembler ) {
+		for ( var aliasName in variables.aliases ) {
+			var spec = variables.aliases[ aliasName ];
+			if ( structKeyExists( spec, "withClause" ) ) {
+				var pred = arguments.assembler.toPredicate( spec.withClause );
+				variables.aliasFinalNode[ aliasName ].on( pred );
+			}
+		}
 	}
 
 	/**
