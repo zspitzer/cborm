@@ -92,4 +92,39 @@ component {
 			: variables.cb.asc(  p );
 	}
 
+	/**
+	 * Convert a projection descriptor { type, path, alias } into a JPA Selection.
+	 * Aggregate types (count/sum/avg/min/max/countDistinct) wrap the path expression;
+	 * "property" returns the raw Path; "rowCount" counts the root entity.
+	 *
+	 * Alias is applied via Selection.alias() so it can be looked up on the Tuple by name.
+	 */
+	function toSelection( required struct p ) {
+		var expr = "";
+		switch ( arguments.p.type ) {
+			case "property":      expr = path( arguments.p.path );                              break;
+			case "count":         expr = variables.cb.count(         path( arguments.p.path ) ); break;
+			case "countDistinct": expr = variables.cb.countDistinct( path( arguments.p.path ) ); break;
+			case "sum":           expr = variables.cb.sum(           path( arguments.p.path ) ); break;
+			case "avg":           expr = variables.cb.avg(           path( arguments.p.path ) ); break;
+			case "min":           expr = variables.cb.min(           path( arguments.p.path ) ); break;
+			case "max":           expr = variables.cb.max(           path( arguments.p.path ) ); break;
+			case "rowCount":      expr = variables.cb.count(         variables.root );           break;
+			default:
+				throw(
+					type    = "cborm.UnsupportedProjection",
+					message = "Projection type [#arguments.p.type#] is not handled by JPAAssembler"
+				);
+		}
+		if ( arguments.p.alias.len() ) expr = expr.alias( arguments.p.alias );
+		return expr;
+	}
+
+	/**
+	 * Resolve a dotted path to a JPA Path expression (for use by callers building groupBy etc.).
+	 */
+	function pathFor( required string p ) {
+		return path( arguments.p );
+	}
+
 }

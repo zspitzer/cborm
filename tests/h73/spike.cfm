@@ -189,6 +189,73 @@ try {
 	check( "scenario 12 didn't throw", false, e.message );
 }
 
+systemOutput( "[scenario 13] single property projection", true );
+try {
+	cb = new cborm.models.criterion.jpa.CriteriaBuilder( entityName="User", ormSession=hbSession );
+	got = cb.eq( "isActive", javacast( "boolean", true ) ).withProjections( property="name" ).list();
+	check( "name-only projection returns 4 names", got.len() eq 4, "got " & got.len() );
+	check( "first row is a string (not entity)", got.len() ? isSimpleValue( got[ 1 ] ) : false );
+} catch ( any e ) {
+	check( "scenario 13 didn't throw", false, e.message );
+}
+
+systemOutput( "[scenario 14] multi-property projection asStruct", true );
+try {
+	cb = new cborm.models.criterion.jpa.CriteriaBuilder( entityName="User", ormSession=hbSession );
+	got = cb
+		.eq( "name", "luis" )
+		.withProjections( property="name,age" )
+		.asStruct()
+		.list();
+	check( "asStruct with 2 props returns 1 row", got.len() eq 1 );
+	check( "row is a struct",                     got.len() ? isStruct( got[ 1 ] ) : false );
+	check( "struct has alias 'name' = luis",      got.len() ? got[ 1 ].name eq "luis" : false );
+	check( "struct has alias 'age' = 42",         got.len() ? got[ 1 ].age eq 42      : false );
+} catch ( any e ) {
+	check( "scenario 14 didn't throw", false, e.message & " :: " & e.detail );
+}
+
+systemOutput( "[scenario 15] aggregates: count + avg + min + max", true );
+try {
+	cb = new cborm.models.criterion.jpa.CriteriaBuilder( entityName="User", ormSession=hbSession );
+	got = cb
+		.withProjections( count="id:total", avg="age:avgAge", min="age:minAge", max="age:maxAge" )
+		.asStruct()
+		.list();
+	check( "single result row", got.len() eq 1 );
+	check( "total = 6",         got.len() ? got[ 1 ].total  eq 6  : false );
+	check( "min age = 22",      got.len() ? got[ 1 ].minAge eq 22 : false );
+	check( "max age = 51",      got.len() ? got[ 1 ].maxAge eq 51 : false );
+} catch ( any e ) {
+	check( "scenario 15 didn't throw", false, e.message );
+}
+
+systemOutput( "[scenario 16] groupBy via dotted path: users per role", true );
+try {
+	cb = new cborm.models.criterion.jpa.CriteriaBuilder( entityName="User", ormSession=hbSession );
+	got = cb
+		.withProjections( count="id:userCount", groupProperty="role.name:roleName" )
+		.asStruct()
+		.order( "role.name", "asc" )
+		.list();
+	// 3 roles: admin(2), editor(2), viewer(2)
+	check( "groupBy returns 3 rows", got.len() eq 3, "got " & got.len() );
+	check( "first row is admin",     got.len() ? got[ 1 ].roleName eq "admin" : false );
+	check( "admin has 2 users",      got.len() ? got[ 1 ].userCount eq 2 : false );
+} catch ( any e ) {
+	check( "scenario 16 didn't throw", false, e.message );
+}
+
+systemOutput( "[scenario 17] rowCount projection", true );
+try {
+	cb = new cborm.models.criterion.jpa.CriteriaBuilder( entityName="User", ormSession=hbSession );
+	got = cb.eq( "isActive", javacast( "boolean", true ) ).withProjections( rowCount=true ).list();
+	check( "rowCount returns 1 row",     got.len() eq 1 );
+	check( "rowCount value is 4 actives", got.len() ? got[ 1 ] eq 4 : false );
+} catch ( any e ) {
+	check( "scenario 17 didn't throw", false, e.message );
+}
+
 // ---------- summary ----------
 
 systemOutput( "", true );
