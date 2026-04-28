@@ -77,4 +77,19 @@ component {
 		return variables.pathResolver.resolve( arguments.p );
 	}
 
+	/**
+	 * Convert an order descriptor { path, dir, ignoreCase? } into a JPA Order.
+	 * Dir is "asc" or "desc" (case-insensitive). ignoreCase wraps the path in cb.lower
+	 * so "abc" and "ABC" sort together — matches the legacy Restrictions.order(...) third arg.
+	 */
+	function toOrder( required struct o ) {
+		var p = path( arguments.o.path );
+		if ( structKeyExists( arguments.o, "ignoreCase" ) && arguments.o.ignoreCase ) {
+			p = variables.cb.lower( p );
+		}
+		return lcase( arguments.o.dir ) eq "desc"
+			? variables.cb.desc( p )
+			: variables.cb.asc(  p );
+	}
+
 }

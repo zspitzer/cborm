@@ -27,6 +27,7 @@ component accessors="true" {
 
 	property name="entityName"  type="string";
 	property name="descriptors" type="array";
+	property name="orders"      type="array";
 
 	CriteriaBuilder function init(
 		required string entityName,
@@ -36,6 +37,11 @@ component accessors="true" {
 		variables.entityName   = arguments.entityName;
 		variables.ormSession   = arguments.ormSession;
 		variables.descriptors  = [];
+		variables.orders       = [];
+		variables.maxResults   = 0;     // 0 = unbounded
+		variables.firstResult  = 0;
+		variables.cacheable    = false;
+		variables.cacheRegion  = "";
 		variables.restrictions = isNull( arguments.restrictions )
 			? new Restrictions()
 			: arguments.restrictions;
@@ -73,6 +79,29 @@ component accessors="true" {
 		return this;
 	}
 
+	// ----- query options -----
+
+	/**
+	 * Add an order-by clause. Multiple calls accumulate; resolution order matches call order.
+	 *
+	 * @path       Property path, dotted paths supported ("role.name")
+	 * @dir        "asc" (default) or "desc"
+	 * @ignoreCase If true, sorts on lower(path) for case-insensitive ordering
+	 */
+	function order( required string path, string dir = "asc", boolean ignoreCase = false ) {
+		arrayAppend( variables.orders, {
+			"path"       : arguments.path,
+			"dir"        : arguments.dir,
+			"ignoreCase" : arguments.ignoreCase
+		} );
+		return this;
+	}
+
+	function maxResults(  required numeric n ) { variables.maxResults  = arguments.n; return this; }
+	function firstResult( required numeric n ) { variables.firstResult = arguments.n; return this; }
+	function cache(       boolean enabled = true ) { variables.cacheable = arguments.enabled; return this; }
+	function cacheRegion( required string region ) { variables.cacheRegion = arguments.region; return this; }
+
 	// ----- execution -----
 
 	/**
@@ -81,12 +110,14 @@ component accessors="true" {
 	function list() {
 		var ctx   = buildQuery();
 		var query = variables.ormSession.createQuery( ctx.cq );
+		applyQueryOptions( query );
 		return query.getResultList();
 	}
 
 	function uniqueResult() {
 		var ctx   = buildQuery();
 		var query = variables.ormSession.createQuery( ctx.cq );
+		applyQueryOptions( query );
 		return query.getSingleResult();
 	}
 
@@ -114,6 +145,7 @@ component accessors="true" {
 
 		cq.select( root );
 		applyWhere( cq, hbCb, assembler );
+		applyOrders( cq, assembler );
 
 		return { cq: cq, root: root, pathResolver: pathResolver };
 	}
@@ -127,6 +159,25 @@ component accessors="true" {
 
 		// Multiple top-level descriptors are ANDed (matches H5 Criteria.add() semantics)
 		arguments.cq.where( preds.len() eq 1 ? preds[ 1 ] : arguments.hbCb.and( preds ) );
+	}
+
+	private void function applyOrders( required cq, required assembler ) {
+		if ( !variables.orders.len() ) return;
+		var jpaOrders = variables.orders.map( function( o ) {
+			return assembler.toOrder( arguments.o );
+		} );
+		arguments.cq.orderBy( jpaOrders );
+	}
+
+	/**
+	 * Apply paging + caching to the runtime Query (not the CriteriaQuery — these are
+	 * runtime hints, not part of the SQL spec).
+	 */
+	private void function applyQueryOptions( required query ) {
+		if ( variables.firstResult ) arguments.query.setFirstResult( javacast( "int", variables.firstResult ) );
+		if ( variables.maxResults  ) arguments.query.setMaxResults(  javacast( "int", variables.maxResults  ) );
+		if ( variables.cacheable   ) arguments.query.setCacheable(   javacast( "boolean", true ) );
+		if ( variables.cacheRegion.len() ) arguments.query.setCacheRegion( variables.cacheRegion );
 	}
 
 }

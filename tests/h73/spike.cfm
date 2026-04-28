@@ -144,6 +144,51 @@ try {
 	check( "scenario 8 didn't throw", false, e.message );
 }
 
+systemOutput( "[scenario 9] order asc + maxResults", true );
+try {
+	cb = new cborm.models.criterion.jpa.CriteriaBuilder( entityName="User", ormSession=hbSession );
+	got = cb.order( "age", "asc" ).maxResults( 3 ).list();
+	// youngest 3: joel(22), curt(28), luminita(30)
+	check( "asc age + max 3 returns 3", got.len() eq 3, "got " & got.len() );
+	check( "first is youngest (joel)",  got.len() ? got[ 1 ].getName() eq "joel" : false );
+	check( "last is third-youngest (luminita)", got.len() eq 3 ? got[ 3 ].getName() eq "luminita" : false );
+} catch ( any e ) {
+	check( "scenario 9 didn't throw", false, e.message );
+}
+
+systemOutput( "[scenario 10] pagination slice (firstResult + maxResults)", true );
+try {
+	cb = new cborm.models.criterion.jpa.CriteriaBuilder( entityName="User", ormSession=hbSession );
+	got = cb.order( "age", "asc" ).firstResult( 2 ).maxResults( 2 ).list();
+	// skip youngest 2, take next 2: luminita(30), brad(35)
+	check( "page 2 of size 2 returns 2", got.len() eq 2, "got " & got.len() );
+	check( "first is luminita", got.len() ? got[ 1 ].getName() eq "luminita" : false );
+	check( "second is brad",    got.len() eq 2 ? got[ 2 ].getName() eq "brad" : false );
+} catch ( any e ) {
+	check( "scenario 10 didn't throw", false, e.message );
+}
+
+systemOutput( "[scenario 11] order desc + dotted path", true );
+try {
+	cb = new cborm.models.criterion.jpa.CriteriaBuilder( entityName="User", ormSession=hbSession );
+	got = cb.order( "role.name", "desc" ).order( "name", "asc" ).list();
+	// roles desc by name: viewer, editor, admin → 6 users grouped by role then by name
+	check( "ordered by role desc, name asc returns all 6", got.len() eq 6, "got " & got.len() );
+	check( "first user is in 'viewer' role", got.len() ? got[ 1 ].getRole().getName() eq "viewer" : false );
+	check( "last user is in 'admin' role",   got.len() eq 6 ? got[ 6 ].getRole().getName() eq "admin" : false );
+} catch ( any e ) {
+	check( "scenario 11 didn't throw", false, e.message );
+}
+
+systemOutput( "[scenario 12] cache flag smoke (no exception, secondary cache off)", true );
+try {
+	cb = new cborm.models.criterion.jpa.CriteriaBuilder( entityName="User", ormSession=hbSession );
+	got = cb.eq( "isActive", javacast( "boolean", true ) ).cache( true ).cacheRegion( "spikeUsers" ).list();
+	check( "cacheable query still returns 4 active users", got.len() eq 4, "got " & got.len() );
+} catch ( any e ) {
+	check( "scenario 12 didn't throw", false, e.message );
+}
+
 // ---------- summary ----------
 
 systemOutput( "", true );
