@@ -217,9 +217,11 @@ component accessors="true" {
 				arguments.id = listToArray( arguments.id );
 			}
 
-			// Convert to Java Type
+			// Convert to Java Type. Hibernate 7 dropped Type.fromStringValue; the replacement
+			// path is via the JavaTypeDescriptor (also available on H5/H6 Type, so no version
+			// dispatch needed).
 			return arguments.id.map( function( thisID ){
-				return identifierType.fromStringValue( thisID );
+				return identifierType.getJavaTypeDescriptor().fromString( javacast( "string", thisID ) );
 			} );
 		}
 
@@ -242,8 +244,9 @@ component accessors="true" {
 			// BL casters are smart enough to handle generic objects
 			return value;
 		} else {
-			var hibernateMD = getEntityMetadata( arguments.entity );
-			return hibernateMD.getPropertyType( arguments.propertyName ).fromStringValue( arguments.value );
+			var hibernateMD  = getEntityMetadata( arguments.entity );
+			var propertyType = hibernateMD.getPropertyType( arguments.propertyName );
+			return propertyType.getJavaTypeDescriptor().fromString( javacast( "string", arguments.value ) );
 		}
 	}
 

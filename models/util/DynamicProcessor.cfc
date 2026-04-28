@@ -453,7 +453,7 @@ component accessors="true" singleton {
 				return converter.convertToDatabaseColumn( arguments.value );
 			}
 		} else {
-			return propertyType.fromStringValue( javacast( "string", arguments.value ) );
+			return propertyType.getJavaTypeDescriptor().fromString( javacast( "string", arguments.value ) );
 		}
 	}
 
