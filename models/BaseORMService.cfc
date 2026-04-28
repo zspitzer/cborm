@@ -1873,24 +1873,36 @@ process(
 	/*****************************************************************************************/
 
 	/**
-	 * Get our hibernate org.hibernate.criterion.Restrictions proxy object
+	 * Get our hibernate org.hibernate.criterion.Restrictions proxy object.
 	 *
-	 * @return cborm.models.criterion.Restrictions
+	 * On Hibernate 7+ the legacy org.hibernate.criterion.* package is gone, so we return
+	 * the descriptor-producing facade from cborm.models.criterion.jpa.Restrictions instead.
+	 * The user-facing method shapes (eq/ne/gt/like/in/...) match across both.
+	 *
+	 * @return cborm.models.criterion.Restrictions or cborm.models.criterion.jpa.Restrictions
 	 */
 	function getRestrictions(){
+		if ( useJPACriteria() ) {
+			return new cborm.models.criterion.jpa.Restrictions();
+		}
 		return variables.wirebox.getInstance( "Restrictions@cborm" );
 	}
 
 	/**
-	 * Get a brand new criteria builder object
+	 * Get a brand new criteria builder object.
+	 *
+	 * Dispatches on Hibernate major version: H7+ returns the JPA-Criteria-backed builder
+	 * from cborm.models.criterion.jpa.CriteriaBuilder; H5/H6 returns the legacy
+	 * org.hibernate.criterion.* builder from cborm.models.criterion.CriteriaBuilder.
+	 * The fluent surface (eq/ne/like/order/joinTo/withProjections/list/...) is identical
+	 * across both — user code is portable.
 	 *
 	 * @entityName       The name of the entity to bind this criteria query to
 	 * @useQueryCaching  Activate query caching for the list operations
 	 * @queryCacheRegion The query cache region to use, which defaults to criterias.{entityName}
-	 * @defaultAsQuery   To return results as queries or array of objects or reports, default is array as results might not match entities precisely
-	 * @dataSource       The datasource to bind the criteria query on, defaults to the one in this ORM service
+	 * @datasource       The datasource to bind the criteria query on, defaults to the one in this ORM service
 	 *
-	 * @return cborm.models.criterion.CriteriaBuilder
+	 * @return cborm.models.criterion.CriteriaBuilder or cborm.models.criterion.jpa.CriteriaBuilder
 	 */
 	any function newCriteria(
 		required string entityName,
@@ -1898,10 +1910,32 @@ process(
 		string queryCacheRegion = "",
 		datasource              = getDatasource()
 	){
-		// mix in yourself as a dependency
+		if ( useJPACriteria() ) {
+			var builder = new cborm.models.criterion.jpa.CriteriaBuilder(
+				entityName = arguments.entityName,
+				ormSession = getOrm().getSession( arguments.datasource )
+			);
+			if ( arguments.useQueryCaching ) {
+				builder.cache( true );
+				if ( arguments.queryCacheRegion.len() ) builder.cacheRegion( arguments.queryCacheRegion );
+			}
+			return builder;
+		}
+
+		// legacy H5/H6 path
 		arguments.ormService = this;
-		// create new criteria builder, it's a transient
 		return new criterion.CriteriaBuilder( argumentCollection = arguments );
+	}
+
+	/**
+	 * Whether the active Hibernate runtime requires the JPA Criteria pipeline.
+	 * Cached per-instance — the version doesn't change across requests.
+	 */
+	private boolean function useJPACriteria(){
+		if ( isNull( variables.useJPACriteriaCache ) ) {
+			variables.useJPACriteriaCache = val( listFirst( getOrm().getHibernateVersion(), "." ) ) gte 7;
+		}
+		return variables.useJPACriteriaCache;
 	}
 
 

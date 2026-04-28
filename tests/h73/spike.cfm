@@ -653,6 +653,24 @@ try {
 	check( "scenario 41 didn't throw", false, e.message & " :: " & e.detail );
 }
 
+systemOutput( "[scenario 42] dispatcher: hibernate version probe + JPA path selection", true );
+try {
+	// Mirror BaseORMService.useJPACriteria() — the same logic the dispatcher uses
+	// to pick between criterion.CriteriaBuilder (H5/H6) and criterion.jpa.CriteriaBuilder (H7+).
+	ormUtil      = new cborm.models.util.ORMUtilFactory().getORMUtil();
+	versionStr   = ormUtil.getHibernateVersion();
+	majorVersion = val( listFirst( versionStr, "." ) );
+	check( "Hibernate version probe yields 7+", majorVersion gte 7, "got [" & versionStr & "]" );
+
+	// Confirm BaseORMService.cfc has the dispatch wired
+	baseSrc = fileRead( expandPath( "/cborm/models/BaseORMService.cfc" ) );
+	check( "BaseORMService dispatches on useJPACriteria()", baseSrc contains "useJPACriteria()" );
+	check( "BaseORMService.newCriteria refers to jpa.CriteriaBuilder", baseSrc contains "criterion.jpa.CriteriaBuilder" );
+	check( "BaseORMService.getRestrictions refers to jpa.Restrictions", baseSrc contains "criterion.jpa.Restrictions" );
+} catch ( any e ) {
+	check( "scenario 42 didn't throw", false, e.message );
+}
+
 // ---------- summary ----------
 
 systemOutput( "", true );
