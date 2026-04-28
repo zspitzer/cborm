@@ -17,9 +17,12 @@ systemOutput( "", true );
 
 // ---------- seed ----------
 
-rAdmin   = entityNew( "Role", { name: "admin"  } ); entitySave( rAdmin );
-rEditor  = entityNew( "Role", { name: "editor" } ); entitySave( rEditor );
-rViewer  = entityNew( "Role", { name: "viewer" } ); entitySave( rViewer );
+oAcme = entityNew( "Org", { name: "acme"   } ); entitySave( oAcme );
+oWidg = entityNew( "Org", { name: "widget" } ); entitySave( oWidg );
+
+rAdmin   = entityNew( "Role", { name: "admin",  org: oAcme } ); entitySave( rAdmin );
+rEditor  = entityNew( "Role", { name: "editor", org: oAcme } ); entitySave( rEditor );
+rViewer  = entityNew( "Role", { name: "viewer", org: oWidg } ); entitySave( rViewer );
 
 seed = [
 	{ name: "luis",     age: 42, isActive: true,  role: rAdmin   },
@@ -318,6 +321,58 @@ try {
 	check( "first user is in 'admin'", got.len() ? got[ 1 ].getRole().getName() eq "admin" : false );
 } catch ( any e ) {
 	check( "scenario 21 didn't throw", false, e.message );
+}
+
+systemOutput( "[scenario 22] HAVING references projection alias", true );
+try {
+	r  = new cborm.models.criterion.jpa.Restrictions();
+	cb = new cborm.models.criterion.jpa.CriteriaBuilder( entityName="User", ormSession=hbSession );
+	got = cb
+		.withProjections( count="id:userCount", groupProperty="role.name:roleName" )
+		.having( r.isGe( "userCount", 2 ) )
+		.asStruct()
+		.list();
+	// each role has 2 users (luis,lucia / brad,curt / joel,luminita)
+	check( "having userCount >= 2 returns 3 roles", got.len() eq 3, "got " & got.len() );
+} catch ( any e ) {
+	check( "scenario 22 didn't throw", false, e.message & " :: " & e.detail );
+}
+
+systemOutput( "[scenario 23] HAVING that excludes everything", true );
+try {
+	r  = new cborm.models.criterion.jpa.Restrictions();
+	cb = new cborm.models.criterion.jpa.CriteriaBuilder( entityName="User", ormSession=hbSession );
+	got = cb
+		.withProjections( count="id:userCount", groupProperty="role.name:roleName" )
+		.having( r.isGt( "userCount", 99 ) )
+		.asStruct()
+		.list();
+	check( "having userCount > 99 returns 0", got.len() eq 0, "got " & got.len() );
+} catch ( any e ) {
+	check( "scenario 23 didn't throw", false, e.message );
+}
+
+systemOutput( "[scenario 24] multi-level joinTo (User -> role -> org) with alias", true );
+try {
+	cb = new cborm.models.criterion.jpa.CriteriaBuilder( entityName="User", ormSession=hbSession );
+	got = cb
+		.joinTo( "role.org", "ro", cb.INNER_JOIN )
+		.eq( "ro.name", "acme" )
+		.list();
+	// admin (luis, lucia) + editor (brad, curt) are in acme org → 4 users
+	check( "joinTo role.org with alias returns 4 acme-org users", got.len() eq 4, "got " & got.len() );
+} catch ( any e ) {
+	check( "scenario 24 didn't throw", false, e.message & " :: " & e.detail );
+}
+
+systemOutput( "[scenario 25] multi-level dotted-path auto-promote", true );
+try {
+	cb = new cborm.models.criterion.jpa.CriteriaBuilder( entityName="User", ormSession=hbSession );
+	got = cb.eq( "role.org.name", "widget" ).list();
+	// viewer (joel, luminita) are in widget org → 2 users
+	check( "role.org.name=widget returns 2 viewer-users", got.len() eq 2, "got " & got.len() );
+} catch ( any e ) {
+	check( "scenario 25 didn't throw", false, e.message );
 }
 
 // ---------- summary ----------

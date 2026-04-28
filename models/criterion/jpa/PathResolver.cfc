@@ -22,18 +22,45 @@
 component {
 
 	PathResolver function init( required root, struct aliases = {} ) {
-		variables.root  = arguments.root;
-		variables.joins = {};
+		variables.root               = arguments.root;
+		variables.joins              = {};
+		variables.projectionAliases  = {};   // populated post-init by CriteriaBuilder
+
+		var jpaJoinTypes = createObject( "java", "jakarta.persistence.criteria.JoinType" );
 
 		for ( var aliasName in arguments.aliases ) {
 			var spec      = arguments.aliases[ aliasName ];
-			var jpaType   = createObject( "java", "jakarta.persistence.criteria.JoinType" )[ spec.joinType ];
-			var joinNode  = arguments.root.join( spec.path, jpaType );
-			variables.joins[ aliasName ] = joinNode;   // alias-prefixed lookup
-			variables.joins[ spec.path ] = joinNode;   // path-prefixed lookup hits the same node
+			var jpaType   = jpaJoinTypes[ spec.joinType ];
+			var pathParts = listToArray( spec.path, "." );
+
+			// Walk dotted association paths step by step. Each intermediate step uses the
+			// same JoinType as the alias spec — matches legacy cborm createAlias("a.b.c", ...)
+			// where the JoinType cascades through every link in the chain.
+			var current = arguments.root;
+			var prefix  = "";
+			for ( var part in pathParts ) {
+				prefix = prefix.len() ? prefix & "." & part : part;
+				if ( !structKeyExists( variables.joins, prefix ) ) {
+					variables.joins[ prefix ] = current.join( part, jpaType );
+				}
+				current = variables.joins[ prefix ];
+			}
+
+			// Alias resolves to the FINAL join node in the chain
+			variables.joins[ aliasName ] = current;
 		}
 
 		return this;
+	}
+
+	/**
+	 * Register a projection-alias → Selection expression mapping. Once registered,
+	 * resolve() will short-circuit a single-segment path matching the alias and
+	 * return the projection expression — so HAVING / ORDER on aggregate aliases
+	 * (`Restrictions.gt("userCount", 5)` after `count="id:userCount"`) works.
+	 */
+	void function registerProjectionAlias( required string alias, required expression ) {
+		variables.projectionAliases[ arguments.alias ] = arguments.expression;
 	}
 
 	/**
@@ -43,6 +70,11 @@ component {
 	 */
 	function resolve( required string path ) {
 		var parts = listToArray( arguments.path, "." );
+
+		// projection alias takes precedence over property lookup for single-segment paths
+		if ( parts.len() eq 1 && structKeyExists( variables.projectionAliases, parts[ 1 ] ) ) {
+			return variables.projectionAliases[ parts[ 1 ] ];
+		}
 
 		if ( parts.len() eq 1 ) {
 			return variables.root.get( parts[ 1 ] );

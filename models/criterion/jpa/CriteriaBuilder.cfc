@@ -43,6 +43,7 @@ component accessors="true" {
 		variables.entityName   = arguments.entityName;
 		variables.ormSession   = arguments.ormSession;
 		variables.descriptors  = [];
+		variables.havings      = [];
 		variables.orders       = [];
 		variables.projections  = [];
 		variables.groupBys     = [];
@@ -87,6 +88,16 @@ component accessors="true" {
 	 */
 	function add( required any descriptor ) {
 		arrayAppend( variables.descriptors, arguments.descriptor );
+		return this;
+	}
+
+	/**
+	 * Add a HAVING predicate — applied after groupBy. Accepts the same descriptor
+	 * shapes as add() / where(): typically aggregates wrapped in comparisons
+	 * (e.g. having a count-projection alias gt 5).
+	 */
+	function having( required any descriptor ) {
+		arrayAppend( variables.havings, arguments.descriptor );
 		return this;
 	}
 
@@ -271,7 +282,13 @@ component accessors="true" {
 
 		if ( hasProjections ) {
 			var selections = variables.projections.map( function( p ) {
-				return assembler.toSelection( arguments.p );
+				var sel = assembler.toSelection( arguments.p );
+				// Register alias so HAVING / ORDER referencing the alias by name
+				// resolves to the same expression (matches legacy cborm behaviour).
+				if ( arguments.p.alias.len() ) {
+					pathResolver.registerProjectionAlias( arguments.p.alias, sel );
+				}
+				return sel;
 			} );
 			cq.multiselect( selections );
 		} else {
@@ -289,6 +306,7 @@ component accessors="true" {
 			cq.groupBy( groupExprs );
 		}
 
+		applyHaving( cq, hbCb, assembler );
 		applyOrders( cq, assembler );
 
 		return { cq: cq, root: root, pathResolver: pathResolver };
@@ -320,6 +338,14 @@ component accessors="true" {
 
 		// Multiple top-level descriptors are ANDed (matches H5 Criteria.add() semantics)
 		arguments.cq.where( preds.len() eq 1 ? preds[ 1 ] : arguments.hbCb.and( preds ) );
+	}
+
+	private void function applyHaving( required cq, required hbCb, required assembler ) {
+		if ( !variables.havings.len() ) return;
+		var preds = variables.havings.map( function( d ) {
+			return assembler.toPredicate( arguments.d );
+		} );
+		arguments.cq.having( preds.len() eq 1 ? preds[ 1 ] : arguments.hbCb.and( preds ) );
 	}
 
 	private void function applyOrders( required cq, required assembler ) {
