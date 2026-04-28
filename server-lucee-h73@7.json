@@ -1,0 +1,33 @@
+{
+    "name":"cborm-lucee-h73@7",
+    "app":{
+        "serverHomeDirectory":".engine/lucee-h73",
+        "cfengine":"lucee@7.0.4-SNAPSHOT+30"
+    },
+    "web":{
+        "http":{
+            "port":"60300"
+        },
+        "rewrites":{
+            "enable":"true"
+        },
+        "webroot":"test-harness",
+        "aliases":{
+            "/moduleroot/cborm":"./"
+        }
+    },
+    "jvm":{
+        "javaHome":"C:/Program Files/Eclipse Adoptium/jdk-21.0.10.7-hotspot",
+        "heapSize":"1024"
+    },
+    "openBrowser":"false",
+    "cfconfig":{
+        "file":".cfconfig.json"
+    },
+    "luceeServerExtensions":[
+        {
+            "name":"Hibernate ORM (H7.3)",
+            "location":"D:/work/lucee-extensions/extension-hibernate/target/hibernate-extension-7.3.2.0-SNAPSHOT.lex"
+        }
+    ]
+}
