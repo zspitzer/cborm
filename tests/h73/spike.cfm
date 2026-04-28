@@ -1,0 +1,160 @@
+<cfscript>
+// ---------------------------------------------------------------------------
+// cborm h73 descriptor pipeline spike.
+//
+// Boots Lucee 7 + extension-hibernate 7.3.x via script-runner. Verifies the new
+// cborm.models.criterion.jpa.* MVP runs end-to-end against H2: descriptor
+// production -> JPA Predicate assembly -> SQL execution -> result list.
+//
+// Run:   spike-h73.bat   (output captured to test-output/spike-h73.txt)
+// ---------------------------------------------------------------------------
+
+systemOutput( "", true );
+systemOutput( "===== cborm h73 descriptor spike =====", true );
+systemOutput( "Hibernate version : " & createObject( "java", "org.hibernate.Version" ).getVersionString(), true );
+systemOutput( "Lucee version     : " & server.lucee.version, true );
+systemOutput( "", true );
+
+// ---------- seed ----------
+
+rAdmin   = entityNew( "Role", { name: "admin"  } ); entitySave( rAdmin );
+rEditor  = entityNew( "Role", { name: "editor" } ); entitySave( rEditor );
+rViewer  = entityNew( "Role", { name: "viewer" } ); entitySave( rViewer );
+
+seed = [
+	{ name: "luis",     age: 42, isActive: true,  role: rAdmin   },
+	{ name: "brad",     age: 35, isActive: true,  role: rEditor  },
+	{ name: "curt",     age: 28, isActive: true,  role: rEditor  },
+	{ name: "joel",     age: 22, isActive: false, role: rViewer  },
+	{ name: "lucia",    age: 51, isActive: true,  role: rAdmin   },
+	{ name: "luminita", age: 30, isActive: false, role: rViewer  }
+];
+for ( u in seed ) {
+	entitySave( entityNew( "User", u ) );
+}
+ormFlush();
+systemOutput( "Seeded #seed.len()# users across 3 roles.", true );
+systemOutput( "", true );
+
+// ---------- helper: fetch entity Java class from session metamodel ----------
+
+hbSession = ormGetSession();
+userClass = hbSession.getMetamodel().entity( "User" ).getJavaType();
+
+// ---------- runner ----------
+
+request.failures = [];
+request.passes   = 0;
+
+function check( required string label, required boolean ok, string detail = "" ) {
+	if ( arguments.ok ) {
+		systemOutput( "  PASS  " & arguments.label, true );
+		request.passes++;
+	} else {
+		systemOutput( "  FAIL  " & arguments.label & ( arguments.detail.len() ? "  -- " & arguments.detail : "" ), true );
+		arrayAppend( request.failures, arguments.label );
+	}
+}
+
+// ---------- scenarios ----------
+
+systemOutput( "[scenario 1] simple eq", true );
+try {
+	cb = new cborm.models.criterion.jpa.CriteriaBuilder(
+		entityName = "User",
+		ormSession = hbSession
+	);
+	got = cb.eq( "name", "luis" ).list();
+	check( "eq returns 1 user", got.len() eq 1 );
+	check( "matched user.name == luis", got.len() ? got[ 1 ].getName() eq "luis" : false );
+} catch ( any e ) {
+	check( "scenario 1 didn't throw", false, e.message & " :: " & e.detail );
+}
+
+systemOutput( "[scenario 2] AND of multiple top-level restrictions", true );
+try {
+	cb = new cborm.models.criterion.jpa.CriteriaBuilder( entityName="User", ormSession=hbSession );
+	got = cb
+		.eq( "isActive", javacast( "boolean", true ) )
+		.gt( "age", 30 )
+		.list();
+	// luis(42), brad(35), lucia(51) — three actives over 30
+	check( "active && age>30 returns 3", got.len() eq 3, "got " & got.len() );
+} catch ( any e ) {
+	check( "scenario 2 didn't throw", false, e.message );
+}
+
+systemOutput( "[scenario 3] like", true );
+try {
+	cb = new cborm.models.criterion.jpa.CriteriaBuilder( entityName="User", ormSession=hbSession );
+	got = cb.like( "name", "lu%" ).list();
+	// luis, lucia, luminita
+	check( "like 'lu%' returns 3", got.len() eq 3, "got " & got.len() );
+} catch ( any e ) {
+	check( "scenario 3 didn't throw", false, e.message );
+}
+
+systemOutput( "[scenario 4] in", true );
+try {
+	cb = new cborm.models.criterion.jpa.CriteriaBuilder( entityName="User", ormSession=hbSession );
+	got = cb.isIn( "name", [ "luis", "brad", "curt" ] ).list();
+	check( "in 3-name list returns 3", got.len() eq 3, "got " & got.len() );
+} catch ( any e ) {
+	check( "scenario 4 didn't throw", false, e.message );
+}
+
+systemOutput( "[scenario 5] dotted-path auto-join (the big one)", true );
+try {
+	cb = new cborm.models.criterion.jpa.CriteriaBuilder( entityName="User", ormSession=hbSession );
+	got = cb.eq( "role.name", "admin" ).list();
+	// luis + lucia
+	check( "role.name = 'admin' returns 2 (PathResolver auto-joined)", got.len() eq 2, "got " & got.len() );
+} catch ( any e ) {
+	check( "scenario 5 didn't throw", false, e.message & " :: " & e.detail );
+}
+
+systemOutput( "[scenario 6] count", true );
+try {
+	cb = new cborm.models.criterion.jpa.CriteriaBuilder( entityName="User", ormSession=hbSession );
+	n = cb.eq( "isActive", javacast( "boolean", true ) ).count();
+	check( "count of active users == 4", n eq 4, "got " & n );
+} catch ( any e ) {
+	check( "scenario 6 didn't throw", false, e.message );
+}
+
+systemOutput( "[scenario 7] composition: $or via Restrictions", true );
+try {
+	r  = new cborm.models.criterion.jpa.Restrictions();
+	cb = new cborm.models.criterion.jpa.CriteriaBuilder( entityName="User", ormSession=hbSession );
+	cb.add( r.$or( r.isEq( "name", "luis" ), r.isEq( "name", "joel" ) ) );
+	got = cb.list();
+	check( "or(name=luis, name=joel) returns 2", got.len() eq 2, "got " & got.len() );
+} catch ( any e ) {
+	check( "scenario 7 didn't throw", false, e.message );
+}
+
+systemOutput( "[scenario 8] not", true );
+try {
+	r  = new cborm.models.criterion.jpa.Restrictions();
+	cb = new cborm.models.criterion.jpa.CriteriaBuilder( entityName="User", ormSession=hbSession );
+	cb.add( r.isNot( r.isEq( "name", "luis" ) ) );
+	got = cb.list();
+	check( "not(name=luis) returns 5", got.len() eq 5, "got " & got.len() );
+} catch ( any e ) {
+	check( "scenario 8 didn't throw", false, e.message );
+}
+
+// ---------- summary ----------
+
+systemOutput( "", true );
+systemOutput( "===== summary =====", true );
+systemOutput( "Passes  : " & request.passes, true );
+systemOutput( "Failures: " & request.failures.len(), true );
+
+if ( request.failures.len() ) {
+	for ( f in request.failures ) systemOutput( "  - " & f, true );
+	throw( type="cborm.h73.spike.failed", message="#request.failures.len()# scenario(s) failed" );
+}
+
+systemOutput( "ALL GREEN", true );
+</cfscript>
