@@ -9,4 +9,11 @@ component persistent="true" table="role" entityName="Role" {
 		cfc       ="Org"
 		fkcolumn  ="org_id";
 
+	property
+		name      ="users"
+		fieldtype ="one-to-many"
+		cfc       ="User"
+		fkcolumn  ="role_id"
+		inverse   ="true";
+
 }

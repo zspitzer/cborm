@@ -488,6 +488,81 @@ try {
 	check( "scenario 32 didn't throw", false, e.message );
 }
 
+systemOutput( "[scenario 33] property comparisons (eqProperty / gtProperty)", true );
+try {
+	r  = new cborm.models.criterion.jpa.Restrictions();
+	cb = new cborm.models.criterion.jpa.CriteriaBuilder( entityName="User", ormSession=hbSession );
+	// trivial truthy: id eq id → matches all 7 users
+	got = cb.add( r.eqProperty( "id", "id" ) ).list();
+	check( "eqProperty(id,id) matches all 7", got.len() eq 7, "got " & got.len() );
+
+	cb = new cborm.models.criterion.jpa.CriteriaBuilder( entityName="User", ormSession=hbSession );
+	// gtProperty: id > id is always false → 0 rows
+	got = cb.add( r.gtProperty( "id", "id" ) ).list();
+	check( "gtProperty(id,id) matches 0", got.len() eq 0, "got " & got.len() );
+} catch ( any e ) {
+	check( "scenario 33 didn't throw", false, e.message );
+}
+
+systemOutput( "[scenario 34] idEq via metamodel", true );
+try {
+	r  = new cborm.models.criterion.jpa.Restrictions();
+	// pick any user's id from the seeded data
+	allUsers = ormExecuteQuery( "from User" );
+	someId   = allUsers[ 1 ].getId();
+	someName = allUsers[ 1 ].getName();
+
+	cb = new cborm.models.criterion.jpa.CriteriaBuilder( entityName="User", ormSession=hbSession );
+	got = cb.add( r.idEq( someId ) ).list();
+	check( "idEq returns exactly 1 user", got.len() eq 1, "got " & got.len() );
+	check( "idEq matches the picked user", got.len() ? got[ 1 ].getName() eq someName : false );
+} catch ( any e ) {
+	check( "scenario 34 didn't throw", false, e.message & " :: " & e.detail );
+}
+
+systemOutput( "[scenario 35] collection isNotEmpty / isEmpty", true );
+try {
+	r  = new cborm.models.criterion.jpa.Restrictions();
+
+	// add a "ghost" role with no users so isEmpty has something to find
+	rGhost = entityNew( "Role", { name: "ghost", org: oAcme } );
+	entitySave( rGhost );
+	ormFlush();
+
+	cb = new cborm.models.criterion.jpa.CriteriaBuilder( entityName="Role", ormSession=hbSession );
+	got = cb.add( r.isNotEmpty( "users" ) ).list();
+	check( "isNotEmpty(users) returns 3 populated roles", got.len() eq 3, "got " & got.len() );
+
+	cb = new cborm.models.criterion.jpa.CriteriaBuilder( entityName="Role", ormSession=hbSession );
+	got = cb.add( r.isEmpty( "users" ) ).list();
+	check( "isEmpty(users) returns 1 ghost role", got.len() eq 1, "got " & got.len() );
+} catch ( any e ) {
+	check( "scenario 35 didn't throw", false, e.message & " :: " & e.detail );
+}
+
+systemOutput( "[scenario 36] collection size comparisons", true );
+try {
+	r  = new cborm.models.criterion.jpa.Restrictions();
+
+	cb = new cborm.models.criterion.jpa.CriteriaBuilder( entityName="Role", ormSession=hbSession );
+	got = cb.add( r.sizeEq( "users", 2 ) ).list();
+	check( "sizeEq(users,2) returns 3 roles (each has 2 users)", got.len() eq 3, "got " & got.len() );
+
+	cb = new cborm.models.criterion.jpa.CriteriaBuilder( entityName="Role", ormSession=hbSession );
+	got = cb.add( r.sizeEq( "users", 0 ) ).list();
+	check( "sizeEq(users,0) returns 1 ghost role", got.len() eq 1, "got " & got.len() );
+
+	cb = new cborm.models.criterion.jpa.CriteriaBuilder( entityName="Role", ormSession=hbSession );
+	got = cb.add( r.sizeGt( "users", 1 ) ).list();
+	check( "sizeGt(users,1) returns 3 roles", got.len() eq 3, "got " & got.len() );
+
+	cb = new cborm.models.criterion.jpa.CriteriaBuilder( entityName="Role", ormSession=hbSession );
+	got = cb.add( r.sizeLe( "users", 0 ) ).list();
+	check( "sizeLe(users,0) returns 1 ghost role", got.len() eq 1, "got " & got.len() );
+} catch ( any e ) {
+	check( "scenario 36 didn't throw", false, e.message );
+}
+
 // ---------- summary ----------
 
 systemOutput( "", true );

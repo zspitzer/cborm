@@ -85,8 +85,37 @@ component singleton {
 
 	// ----- property comparisons -----
 
-	function eqProperty( required string property, required string otherProperty ) {
-		return { "type": "eqProperty", "left": arguments.property, "right": arguments.otherProperty };
+	function eqProperty( required string property, required string otherProperty ) { return cmpProperty( "eq", arguments.property, arguments.otherProperty ); }
+	function neProperty( required string property, required string otherProperty ) { return cmpProperty( "ne", arguments.property, arguments.otherProperty ); }
+	function gtProperty( required string property, required string otherProperty ) { return cmpProperty( "gt", arguments.property, arguments.otherProperty ); }
+	function geProperty( required string property, required string otherProperty ) { return cmpProperty( "ge", arguments.property, arguments.otherProperty ); }
+	function ltProperty( required string property, required string otherProperty ) { return cmpProperty( "lt", arguments.property, arguments.otherProperty ); }
+	function leProperty( required string property, required string otherProperty ) { return cmpProperty( "le", arguments.property, arguments.otherProperty ); }
+
+	private function cmpProperty( required string op, required string left, required string right ) {
+		return { "type": "cmpProperty", "op": arguments.op, "left": arguments.left, "right": arguments.right };
+	}
+
+	// ----- identifier -----
+
+	function idEq( required any propertyValue ) {
+		return { "type": "idEq", "value": arguments.propertyValue };
+	}
+
+	// ----- collection (associations as properties) -----
+
+	function isEmpty(    required string property ) { return { "type": "isEmpty",    "path": arguments.property }; }
+	function isNotEmpty( required string property ) { return { "type": "isNotEmpty", "path": arguments.property }; }
+
+	function sizeEq( required string property, required numeric size ) { return sizeCmp( "eq", arguments.property, arguments.size ); }
+	function sizeNe( required string property, required numeric size ) { return sizeCmp( "ne", arguments.property, arguments.size ); }
+	function sizeGt( required string property, required numeric size ) { return sizeCmp( "gt", arguments.property, arguments.size ); }
+	function sizeGe( required string property, required numeric size ) { return sizeCmp( "ge", arguments.property, arguments.size ); }
+	function sizeLt( required string property, required numeric size ) { return sizeCmp( "lt", arguments.property, arguments.size ); }
+	function sizeLe( required string property, required numeric size ) { return sizeCmp( "le", arguments.property, arguments.size ); }
+
+	private function sizeCmp( required string op, required string property, required numeric size ) {
+		return { "type": "sizeCmp", "op": arguments.op, "path": arguments.property, "size": arguments.size };
 	}
 
 	// ----- composition -----

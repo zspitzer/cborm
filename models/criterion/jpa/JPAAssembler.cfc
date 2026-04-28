@@ -38,7 +38,44 @@ component {
 			case "ilike":       return variables.cb.like( variables.cb.lower( path( arguments.d.path ) ), lcase( arguments.d.value ) );
 			case "isNull":      return variables.cb.isNull(             path( arguments.d.path ) );
 			case "isNotNull":   return variables.cb.isNotNull(          path( arguments.d.path ) );
-			case "eqProperty":  return variables.cb.equal(              path( arguments.d.left ), path( arguments.d.right ) );
+
+			case "cmpProperty":
+				var leftPath  = path( arguments.d.left );
+				var rightPath = path( arguments.d.right );
+				switch ( arguments.d.op ) {
+					case "eq": return variables.cb.equal(                leftPath, rightPath );
+					case "ne": return variables.cb.notEqual(             leftPath, rightPath );
+					case "gt": return variables.cb.greaterThan(          leftPath, rightPath );
+					case "ge": return variables.cb.greaterThanOrEqualTo( leftPath, rightPath );
+					case "lt": return variables.cb.lessThan(             leftPath, rightPath );
+					case "le": return variables.cb.lessThanOrEqualTo(    leftPath, rightPath );
+				}
+				throw( type="cborm.UnsupportedPropertyCmp", message="cmpProperty op [#arguments.d.op#] not supported" );
+
+			// ----- identifier -----
+
+			case "idEq":
+				var entityModel = variables.root.getModel();
+				var idJavaType  = entityModel.getIdType().getJavaType();
+				var idName      = entityModel.getId( idJavaType ).getName();
+				return variables.cb.equal( variables.root.get( idName ), arguments.d.value );
+
+			// ----- collection (associations) -----
+
+			case "isEmpty":     return variables.cb.isEmpty(    path( arguments.d.path ) );
+			case "isNotEmpty":  return variables.cb.isNotEmpty( path( arguments.d.path ) );
+
+			case "sizeCmp":
+				var sizeExpr = variables.cb.size( path( arguments.d.path ) );
+				switch ( arguments.d.op ) {
+					case "eq": return variables.cb.equal(                sizeExpr, javacast( "int", arguments.d.size ) );
+					case "ne": return variables.cb.notEqual(             sizeExpr, javacast( "int", arguments.d.size ) );
+					case "gt": return variables.cb.greaterThan(          sizeExpr, javacast( "int", arguments.d.size ) );
+					case "ge": return variables.cb.greaterThanOrEqualTo( sizeExpr, javacast( "int", arguments.d.size ) );
+					case "lt": return variables.cb.lessThan(             sizeExpr, javacast( "int", arguments.d.size ) );
+					case "le": return variables.cb.lessThanOrEqualTo(    sizeExpr, javacast( "int", arguments.d.size ) );
+				}
+				throw( type="cborm.UnsupportedSizeCmp", message="sizeCmp op [#arguments.d.op#] not supported" );
 
 			case "in":
 				var inExpr = variables.cb.in( path( arguments.d.path ) );
