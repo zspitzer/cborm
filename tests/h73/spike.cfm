@@ -256,6 +256,70 @@ try {
 	check( "scenario 17 didn't throw", false, e.message );
 }
 
+systemOutput( "[scenario 18] explicit joinTo with INNER join + alias-prefixed path", true );
+try {
+	cb = new cborm.models.criterion.jpa.CriteriaBuilder( entityName="User", ormSession=hbSession );
+	got = cb
+		.joinTo( associationName="role", alias="r", joinType=cb.INNER_JOIN )
+		.eq( "r.name", "admin" )
+		.list();
+	check( "INNER join + r.name=admin returns 2", got.len() eq 2, "got " & got.len() );
+} catch ( any e ) {
+	check( "scenario 18 didn't throw", false, e.message & " :: " & e.detail );
+}
+
+// add a roleless user so LEFT vs INNER produce different results
+nathan = entityNew( "User", { name: "nathan", age: 19, isActive: true } );
+entitySave( nathan );
+ormFlush();
+systemOutput( "  (added nathan with no role for LEFT-join probe)", true );
+
+systemOutput( "[scenario 19] LEFT join keeps roleless rows; INNER drops them", true );
+try {
+	cb = new cborm.models.criterion.jpa.CriteriaBuilder( entityName="User", ormSession=hbSession );
+	innerCount = cb.eq( "role.name", "admin" ).count();   // INNER auto-promote
+	check( "INNER auto-join admin = 2", innerCount eq 2, "got " & innerCount );
+
+	cb = new cborm.models.criterion.jpa.CriteriaBuilder( entityName="User", ormSession=hbSession );
+	leftCount = cb
+		.joinTo( "role", "r", cb.LEFT_JOIN )
+		.list()
+		.len();
+	// LEFT join role with no predicate = all 7 users (including nathan with null role)
+	check( "LEFT join no-predicate returns 7", leftCount eq 7, "got " & leftCount );
+} catch ( any e ) {
+	check( "scenario 19 didn't throw", false, e.message & " :: " & e.detail );
+}
+
+systemOutput( "[scenario 20] aliased path coexists with dotted path on same join", true );
+try {
+	cb = new cborm.models.criterion.jpa.CriteriaBuilder( entityName="User", ormSession=hbSession );
+	// Both `r.name` and `role.name` should reach the SAME join node — not produce two joins
+	got = cb
+		.joinTo( "role", "r", cb.INNER_JOIN )
+		.eq( "r.name", "admin" )
+		.eq( "role.name", "admin" )    // redundant but should not double-join
+		.list();
+	check( "alias + dotted on same join returns 2 admins", got.len() eq 2, "got " & got.len() );
+} catch ( any e ) {
+	check( "scenario 20 didn't throw", false, e.message );
+}
+
+systemOutput( "[scenario 21] join with order through alias", true );
+try {
+	cb = new cborm.models.criterion.jpa.CriteriaBuilder( entityName="User", ormSession=hbSession );
+	got = cb
+		.joinTo( "role", "r", cb.INNER_JOIN )
+		.order( "r.name", "asc" )
+		.order( "name",   "asc" )
+		.list();
+	// 6 users with roles (nathan excluded by INNER), ordered by role then name
+	check( "ordered by alias.field returns 6 (INNER excludes nathan)", got.len() eq 6, "got " & got.len() );
+	check( "first user is in 'admin'", got.len() ? got[ 1 ].getRole().getName() eq "admin" : false );
+} catch ( any e ) {
+	check( "scenario 21 didn't throw", false, e.message );
+}
+
 // ---------- summary ----------
 
 systemOutput( "", true );

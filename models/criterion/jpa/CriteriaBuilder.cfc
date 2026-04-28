@@ -29,6 +29,12 @@ component accessors="true" {
 	property name="descriptors" type="array";
 	property name="orders"      type="array";
 
+	// Join type constants — match cborm's legacy public surface so user code is portable.
+	// FULL_JOIN intentionally absent: jakarta.persistence.criteria.JoinType only exposes INNER/LEFT/RIGHT.
+	this.INNER_JOIN = "INNER";
+	this.LEFT_JOIN  = "LEFT";
+	this.RIGHT_JOIN = "RIGHT";
+
 	CriteriaBuilder function init(
 		required string entityName,
 		required any    ormSession,    // org.hibernate.Session (also a jakarta.persistence.EntityManager)
@@ -40,6 +46,7 @@ component accessors="true" {
 		variables.orders       = [];
 		variables.projections  = [];
 		variables.groupBys     = [];
+		variables.aliases      = {};    // aliasName -> { path, joinType }
 		variables.asStruct     = false;
 		variables.distinctRoot = false;
 		variables.maxResults   = 0;     // 0 = unbounded
@@ -99,6 +106,37 @@ component accessors="true" {
 			"ignoreCase" : arguments.ignoreCase
 		} );
 		return this;
+	}
+
+	// ----- joins -----
+
+	/**
+	 * Register an explicit JPA Join with a named alias and a chosen JoinType.
+	 * Both `alias.field` and `associationName.field` paths resolve to the same physical join afterwards.
+	 *
+	 * @associationName Property path on the root entity, e.g. "role"
+	 * @alias           Alias name for use in subsequent paths, e.g. "r"
+	 * @joinType        One of this.INNER_JOIN | this.LEFT_JOIN | this.RIGHT_JOIN (default INNER)
+	 */
+	function createAlias(
+		required string associationName,
+		required string alias,
+		string          joinType = this.INNER_JOIN
+	) {
+		variables.aliases[ arguments.alias ] = {
+			"path"     : arguments.associationName,
+			"joinType" : arguments.joinType
+		};
+		return this;
+	}
+
+	/** Alias of createAlias — matches legacy cborm naming. */
+	function joinTo(
+		required string associationName,
+		required string alias,
+		string          joinType = this.INNER_JOIN
+	) {
+		return createAlias( argumentCollection = arguments );
 	}
 
 	function maxResults(  required numeric n ) { variables.maxResults  = arguments.n; return this; }
@@ -206,7 +244,7 @@ component accessors="true" {
 		var hbCb         = variables.ormSession.getCriteriaBuilder();
 		var cq           = hbCb.createQuery();   // untyped — returns Object on getSingleResult
 		var root         = cq.from( variables.entityType );
-		var pathResolver = new PathResolver( root = root );
+		var pathResolver = new PathResolver( root = root, aliases = variables.aliases );
 		var assembler    = new JPAAssembler( cb = hbCb, root = root, pathResolver = pathResolver );
 
 		cq.select( hbCb.count( root ) );
@@ -228,7 +266,7 @@ component accessors="true" {
 			: hbCb.createQuery();
 
 		var root         = cq.from( variables.entityType );
-		var pathResolver = new PathResolver( root = root );
+		var pathResolver = new PathResolver( root = root, aliases = variables.aliases );
 		var assembler    = new JPAAssembler( cb = hbCb, root = root, pathResolver = pathResolver );
 
 		if ( hasProjections ) {
