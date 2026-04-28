@@ -174,6 +174,12 @@ component {
 			case "min":           expr = variables.cb.min(           path( arguments.p.path ) ); break;
 			case "max":           expr = variables.cb.max(           path( arguments.p.path ) ); break;
 			case "rowCount":      expr = variables.cb.count(         variables.root );           break;
+			case "id":
+				var entityModel = variables.root.getModel();
+				var idJavaType  = entityModel.getIdType().getJavaType();
+				var idName      = entityModel.getId( idJavaType ).getName();
+				expr = variables.root.get( idName );
+				break;
 			default:
 				throw(
 					type    = "cborm.UnsupportedProjection",

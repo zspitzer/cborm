@@ -148,6 +148,27 @@ component singleton {
 		return disjunction( parts );
 	}
 
+	// ----- arbitrary SQL fragments (NOT supported on H7) -----
+
+	/**
+	 * TODO: legacy Restrictions.sql injected an arbitrary SQL fragment into the WHERE
+	 * clause. JPA Criteria has no clean equivalent — `cb.function()` covers named SQL
+	 * functions but not free-form fragments. Users who need raw SQL should drop down
+	 * to HQL via ormExecuteQuery() instead.
+	 */
+	function sql( required string sql, array params = [] ) {
+		throw(
+			type    = "cborm.JPA.NotImplemented",
+			message = "Restrictions.sql() / sqlRestriction() is not supported on Hibernate 7+",
+			detail  = "Arbitrary SQL fragments cannot be expressed via JPA Criteria. Use ormExecuteQuery( ""HQL string"" ) for free-form queries, or add a domain-specific descriptor type if the fragment is reusable."
+		);
+	}
+
+	/** @deprecated alias of sql(). Same H7 limitation applies. */
+	function sqlRestriction( required string sql, array params = [] ) {
+		return sql( argumentCollection = arguments );
+	}
+
 	// ----- aliases (matches legacy onMissingMethod) -----
 
 	function onMissingMethod( required string missingMethodName, required struct missingMethodArguments ) {

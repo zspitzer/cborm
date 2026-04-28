@@ -54,6 +54,7 @@ component accessors="true" {
 		variables.firstResult  = 0;
 		variables.cacheable    = false;
 		variables.cacheRegion  = "";
+		variables.hints        = {};    // arbitrary JPA/Hibernate query hints
 		variables.restrictions = isNull( arguments.restrictions )
 			? new Restrictions()
 			: arguments.restrictions;
@@ -162,6 +163,77 @@ component accessors="true" {
 	function cache(       boolean enabled = true ) { variables.cacheable = arguments.enabled; return this; }
 	function cacheRegion( required string region ) { variables.cacheRegion = arguments.region; return this; }
 
+	// ----- query hints (passthrough to JPA Query.setHint) -----
+
+	function timeout(   required numeric seconds ) { variables.hints[ "org.hibernate.timeout"   ] = javacast( "int", arguments.seconds ); return this; }
+	function fetchSize( required numeric n       ) { variables.hints[ "org.hibernate.fetchSize" ] = javacast( "int", arguments.n );       return this; }
+	function readOnly(  boolean enabled = true   ) { variables.hints[ "org.hibernate.readOnly"  ] = javacast( "boolean", arguments.enabled ); return this; }
+	function comment(   required string comment  ) { variables.hints[ "org.hibernate.comment"   ] = arguments.comment; return this; }
+
+	/**
+	 * Generic hint setter — pass JPA-standard or Hibernate hint names directly.
+	 * E.g. queryHint( "jakarta.persistence.fetchgraph", graph ).
+	 */
+	function queryHint( required string name, required any value ) {
+		variables.hints[ arguments.name ] = arguments.value;
+		return this;
+	}
+
+	// ----- fetch-by-id (terminal) -----
+
+	/**
+	 * Load an entity by primary key. Returns the entity instance or null if not found.
+	 * Bypasses the descriptor pipeline — uses the standard ORM lookup path.
+	 */
+	function get( required any id ) {
+		return entityLoadByPK( variables.entityName, arguments.id );
+	}
+
+	/**
+	 * Like get(), but throws cborm.EntityNotFound when the id has no match.
+	 */
+	function getOrFail( required any id ) {
+		var entity = get( arguments.id );
+		if ( isNull( entity ) ) {
+			throw(
+				type    = "cborm.EntityNotFound",
+				message = "Entity [#variables.entityName#] with id [#arguments.id#] not found"
+			);
+		}
+		return entity;
+	}
+
+	// ----- flow helpers (mirror cborm 4.6+ ActiveEntity additions) -----
+
+	/**
+	 * Pass the builder to a closure for inspection / inline mutation. Always returns this.
+	 */
+	function peek( required target ) {
+		arguments.target( this );
+		return this;
+	}
+
+	/**
+	 * Conditional builder mutation — invoke the closure only when test is truthy.
+	 * For the inverse, use unless().
+	 */
+	function when( required boolean test, required target, function failure ) {
+		if ( arguments.test ) {
+			arguments.target( this );
+		} else if ( !isNull( arguments.failure ) ) {
+			arguments.failure( this );
+		}
+		return this;
+	}
+
+	function unless( required boolean test, required target, function failure ) {
+		return when(
+			test    = !arguments.test,
+			target  = arguments.target,
+			failure = isNull( arguments.failure ) ? javacast( "null", "" ) : arguments.failure
+		);
+	}
+
 	// ----- projections -----
 
 	/**
@@ -180,16 +252,37 @@ component accessors="true" {
 	 * @rowCount      Add a count(rootEntity) projection (count of all matching rows)
 	 */
 	function withProjections(
-		string  property      = "",
-		string  count         = "",
-		string  countDistinct = "",
-		string  sum           = "",
-		string  avg           = "",
-		string  min           = "",
-		string  max           = "",
-		string  groupProperty = "",
-		boolean rowCount      = false
+		string  property              = "",
+		string  count                 = "",
+		string  countDistinct         = "",
+		string  sum                   = "",
+		string  avg                   = "",
+		string  min                   = "",
+		string  max                   = "",
+		string  groupProperty         = "",
+		boolean rowCount              = false,
+		boolean id                    = false,
+		any     distinct,
+		any     sqlProjection,
+		any     sqlGroupProjection,
+		any     detachedSQLProjection
 	) {
+		// Reject arbitrary-SQL projection variants — same JPA limitation as Restrictions.sql().
+		if ( !isNull( arguments.sqlProjection ) || !isNull( arguments.sqlGroupProjection ) || !isNull( arguments.detachedSQLProjection ) ) {
+			throwNotImplemented(
+				"withProjections(sqlProjection / sqlGroupProjection / detachedSQLProjection)",
+				"Free-form SQL projections cannot be expressed via JPA Criteria. Use ormExecuteQuery( ""HQL ..."" ) for non-aggregate raw SQL needs."
+			);
+		}
+		// Whole-list DISTINCT wrapping isn't a JPA concept — use asDistinct() for distinct rows
+		// or countDistinct=... for distinct counts.
+		if ( !isNull( arguments.distinct ) ) {
+			throwNotImplemented(
+				"withProjections(distinct=...)",
+				"JPA Criteria has no per-projection-list distinct wrapper. Use .asDistinct() for whole-row distinct, or withProjections( countDistinct=""prop"" ) for COUNT(DISTINCT prop)."
+			);
+		}
+
 		addProjections( arguments.property,      "property" );
 		addProjections( arguments.count,         "count" );
 		addProjections( arguments.countDistinct, "countDistinct" );
@@ -208,6 +301,11 @@ component accessors="true" {
 
 		if ( arguments.rowCount ) {
 			arrayAppend( variables.projections, { "type": "rowCount", "path": "", "alias": "rowCount" } );
+		}
+
+		// `id=true` projects the entity's identifier — resolved from the metamodel at assemble time
+		if ( arguments.id ) {
+			arrayAppend( variables.projections, { "type": "id", "path": "", "alias": "id" } );
 		}
 
 		return this;
@@ -427,14 +525,77 @@ component accessors="true" {
 	}
 
 	/**
-	 * Apply paging + caching to the runtime Query (not the CriteriaQuery — these are
-	 * runtime hints, not part of the SQL spec).
+	 * Apply paging + caching + arbitrary hints to the runtime Query.
 	 */
 	private void function applyQueryOptions( required query ) {
 		if ( variables.firstResult ) arguments.query.setFirstResult( javacast( "int", variables.firstResult ) );
 		if ( variables.maxResults  ) arguments.query.setMaxResults(  javacast( "int", variables.maxResults  ) );
 		if ( variables.cacheable   ) arguments.query.setCacheable(   javacast( "boolean", true ) );
 		if ( variables.cacheRegion.len() ) arguments.query.setCacheRegion( variables.cacheRegion );
+
+		for ( var hintName in variables.hints ) {
+			arguments.query.setHint( hintName, variables.hints[ hintName ] );
+		}
+	}
+
+	// =====================================================================
+	// Legacy-API stubs — TODO: implement or formally retire.
+	//
+	// These methods exist on the H5 BaseBuilder/CriteriaBuilder surface but have no
+	// clean JPA Criteria equivalent. Stubbed so user code calling them gets a clear,
+	// catchable cborm.JPA.NotImplemented error instead of "method not found".
+	// =====================================================================
+
+	/** TODO: cbStreams integration. Returns a stream wrapping list() results. */
+	function asStream() {
+		throwNotImplemented( "asStream", "cbStreams integration not wired in the JPA builder yet. Use .list() and feed it into a stream manually if needed." );
+	}
+
+	/** TODO: re-rooted criteria at an associated entity. JPA equivalent requires building a fresh CriteriaQuery; deferred. */
+	function createSubcriteria( required string entityName, string alias = "" ) {
+		throwNotImplemented( "createSubcriteria", "Re-rooting criteria at an associated entity has no direct JPA Criteria translation. Use a separate CriteriaBuilder( entityName=#arguments.entityName# ) and join/correlate as needed, or use Subqueries for IN/EXISTS patterns." );
+	}
+
+	/** Manual JPA Selection injection. Use withProjections(...) instead. */
+	function setProjection( any projection ) {
+		throwNotImplemented( "setProjection", "Pass projection specs via withProjections( property=, count=, ... ). Manual JPA Selection objects bypass the descriptor pipeline." );
+	}
+
+	/** Hibernate ResultTransformer — removed in H6. Equivalent: withProjections + asStruct, or write a closure over .list() results. */
+	function resultTransformer( any resultTransformer ) {
+		throwNotImplemented( "resultTransformer", "Hibernate ResultTransformer was removed in H6. Use .asStruct() (alias-keyed structs) or .asDistinct() (whole-row distinct), or transform .list() results in CFML." );
+	}
+
+	// ---- SQL extraction (Hibernate's CriteriaJoinWalker / CriteriaQueryTranslator are gone in H6+) ----
+
+	function getSQL( boolean returnExecutableSql = false, boolean formatSql = true ) {
+		throwNotImplemented( "getSQL", "JPA Criteria has no public API to extract the rendered SQL string. Enable Hibernate's logSQL setting on the datasource for SQL logging, or unwrap to org.hibernate.query.Query and call .getQueryString() for the HQL form (not raw SQL)." );
+	}
+
+	function getPositionalSQLParameterValues() { throwNotImplemented( "getPositionalSQLParameterValues", "Same as getSQL — internal Hibernate criteria SQL extraction was removed in H6." ); }
+	function getPositionalSQLParameterTypes()  { throwNotImplemented( "getPositionalSQLParameterTypes",  "Same as getSQL." ); }
+	function getPositionalSQLParameters()      { throwNotImplemented( "getPositionalSQLParameters",      "Same as getSQL." ); }
+	function getSQLLog()                       { throwNotImplemented( "getSQLLog",                       "Internal SQL log relied on legacy SQL extraction. Use Hibernate's logSQL setting." ); }
+	function startSqlLog( boolean returnExecutableSql = false, boolean formatSql = false ) { throwNotImplemented( "startSqlLog", "Use Hibernate's logSQL setting on the datasource." ); }
+	function stopSqlLog()                       { throwNotImplemented( "stopSqlLog",  "Use Hibernate's logSQL setting on the datasource." ); }
+	function logSQL( required string label )    { throwNotImplemented( "logSQL",      "Use Hibernate's logSQL setting on the datasource." ); }
+	function canLogSql()                        { return false; }   // safe falsey — callers branch on this
+
+	// ---- type-coercion helpers (JPA does its own coercion via parameter binding) ----
+
+	function convertIDValueToJavaType( required id )                         { throwNotImplemented( "convertIDValueToJavaType", "JPA performs its own parameter coercion. Pass values directly to predicates." ); }
+	function idCast( required id )                                            { throwNotImplemented( "idCast",                  "JPA performs its own parameter coercion. Pass values directly to predicates." ); }
+	function convertValueToJavaType( required propertyName, required value )  { throwNotImplemented( "convertValueToJavaType",  "JPA performs its own parameter coercion. Pass values directly to predicates." ); }
+	function autoCast( required propertyName, required value )               { throwNotImplemented( "autoCast",                "JPA performs its own parameter coercion. Pass values directly to predicates." ); }
+
+	// ---- consistent throw helper ----
+
+	private void function throwNotImplemented( required string method, string detail = "" ) {
+		throw(
+			type    = "cborm.JPA.NotImplemented",
+			message = "[#arguments.method#] is not implemented in the H7+ JPA criterion pipeline",
+			detail  = arguments.detail
+		);
 	}
 
 }

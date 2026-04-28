@@ -563,6 +563,96 @@ try {
 	check( "scenario 36 didn't throw", false, e.message );
 }
 
+systemOutput( "[scenario 37] get / getOrFail by id", true );
+try {
+	allUsers = ormExecuteQuery( "from User where name = 'luis'" );
+	luisId   = allUsers[ 1 ].getId();
+
+	cb = new cborm.models.criterion.jpa.CriteriaBuilder( entityName="User", ormSession=hbSession );
+	got = cb.get( luisId );
+	check( "get(luisId) returns the user",       !isNull( got ) && got.getName() eq "luis" );
+
+	cb = new cborm.models.criterion.jpa.CriteriaBuilder( entityName="User", ormSession=hbSession );
+	got = cb.get( 999999 );
+	check( "get(invalid id) returns null",       isNull( got ) );
+
+	cb = new cborm.models.criterion.jpa.CriteriaBuilder( entityName="User", ormSession=hbSession );
+	threw = false;
+	try { cb.getOrFail( 999999 ); } catch ( cborm.EntityNotFound e ) { threw = true; }
+	check( "getOrFail(invalid id) throws cborm.EntityNotFound", threw );
+} catch ( any e ) {
+	check( "scenario 37 didn't throw", false, e.message );
+}
+
+systemOutput( "[scenario 38] query hints (timeout / readOnly / fetchSize / comment) chain without error", true );
+try {
+	cb = new cborm.models.criterion.jpa.CriteriaBuilder( entityName="User", ormSession=hbSession );
+	got = cb
+		.eq( "isActive", javacast( "boolean", true ) )
+		.timeout( 30 )
+		.readOnly( true )
+		.fetchSize( 50 )
+		.comment( "spike-hint-test" )
+		.queryHint( "jakarta.persistence.cache.retrieveMode", "USE" )
+		.list();
+	check( "hint chain runs and returns 5 active users", got.len() eq 5, "got " & got.len() );
+} catch ( any e ) {
+	check( "scenario 38 didn't throw", false, e.message );
+}
+
+systemOutput( "[scenario 39] flow helpers: peek / when / unless", true );
+try {
+	r  = new cborm.models.criterion.jpa.Restrictions();
+
+	cb = new cborm.models.criterion.jpa.CriteriaBuilder( entityName="User", ormSession=hbSession );
+	peeked = false;
+	got = cb
+		.eq( "isActive", javacast( "boolean", true ) )
+		.peek( function( c ) { peeked = true; } )
+		.when( true,  function( c ) { c.gt( "age", 30 ); } )
+		.unless( true, function( c ) { c.eq( "name", "should-not-apply" ); } )
+		.list();
+	check( "peek closure was invoked", peeked );
+	// active && age>30: luis(42), brad(35), lucia(51) = 3
+	check( "when(true) applied gt(age,30) → 3 users", got.len() eq 3, "got " & got.len() );
+} catch ( any e ) {
+	check( "scenario 39 didn't throw", false, e.message );
+}
+
+systemOutput( "[scenario 40] unsupported method throws cborm.JPA.NotImplemented", true );
+try {
+	r  = new cborm.models.criterion.jpa.Restrictions();
+	cb = new cborm.models.criterion.jpa.CriteriaBuilder( entityName="User", ormSession=hbSession );
+
+	threw = false;
+	try { r.sql( "1=1" ); } catch ( cborm.JPA.NotImplemented e ) { threw = true; }
+	check( "Restrictions.sql throws cborm.JPA.NotImplemented", threw );
+
+	threw = false;
+	try { cb.getSQL(); } catch ( cborm.JPA.NotImplemented e ) { threw = true; }
+	check( "CriteriaBuilder.getSQL throws cborm.JPA.NotImplemented", threw );
+
+	threw = false;
+	try { cb.asStream(); } catch ( cborm.JPA.NotImplemented e ) { threw = true; }
+	check( "CriteriaBuilder.asStream throws cborm.JPA.NotImplemented", threw );
+
+	threw = false;
+	try { cb.withProjections( sqlProjection={} ); } catch ( cborm.JPA.NotImplemented e ) { threw = true; }
+	check( "withProjections(sqlProjection=) throws cborm.JPA.NotImplemented", threw );
+} catch ( any e ) {
+	check( "scenario 40 didn't throw", false, e.message & " :: " & e.detail );
+}
+
+systemOutput( "[scenario 41] id projection via metamodel", true );
+try {
+	cb = new cborm.models.criterion.jpa.CriteriaBuilder( entityName="User", ormSession=hbSession );
+	got = cb.eq( "name", "luis" ).withProjections( id=true ).list();
+	check( "id projection returns 1 row", got.len() eq 1 );
+	check( "row is the id (numeric)",     got.len() ? isNumeric( got[ 1 ] ) : false );
+} catch ( any e ) {
+	check( "scenario 41 didn't throw", false, e.message & " :: " & e.detail );
+}
+
 // ---------- summary ----------
 
 systemOutput( "", true );
