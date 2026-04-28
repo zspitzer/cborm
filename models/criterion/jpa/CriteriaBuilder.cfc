@@ -251,12 +251,66 @@ component accessors="true" {
 		return result;
 	}
 
+	/**
+	 * Materialise this builder as a JPA Subquery inside a parent CriteriaQuery.
+	 *
+	 * Used by Subqueries.propertyIn / exists / etc. — the "detached" cborm pattern
+	 * in JPA Criteria terms. JPA Subqueries can't exist independently; they're
+	 * created via parentCq.subquery(Class) and own their Root/predicates within
+	 * the parent's scope. The descriptor pattern fits this naturally: descriptors
+	 * are pure data, materialised on demand against any (cq, root) pair.
+	 *
+	 * Constraints: only descriptors + projections + aliases + joins are honoured.
+	 * Orders / paging / cache / asStruct / groupBy / having are ignored — they
+	 * don't have JPA Subquery equivalents at this layer.
+	 *
+	 * @parentCq The parent CriteriaQuery this subquery attaches into
+	 * @hbCb     The Hibernate/JPA CriteriaBuilder
+	 */
+	function renderAsSubquery( required parentCq, required hbCb, any resultType ) {
+		// JPA enforces type compatibility between subquery result type and the LHS of
+		// the comparison (in / equal / gt / etc.). Caller passes the LHS Path's
+		// Java type so the subquery declares it correctly. Falls back to Object for
+		// exists/notExists where the result type is irrelevant.
+		var type = isNull( arguments.resultType )
+			? createObject( "java", "java.lang.Object" ).getClass()
+			: arguments.resultType;
+		var sq = arguments.parentCq.subquery( type );
+		var subRoot         = sq.from( variables.entityType );
+		var subPathResolver = new PathResolver( root = subRoot, aliases = variables.aliases );
+		var subAssembler    = new JPAAssembler(
+			cb           = arguments.hbCb,
+			cq           = sq,
+			root         = subRoot,
+			pathResolver = subPathResolver
+		);
+
+		// SELECT clause: subqueries must select exactly one expression. Use the first
+		// projection if the user set one (typical: count="id" or property="id"); otherwise
+		// fall back to selecting the root entity (ie. `select e from Entity e where ...`).
+		if ( variables.projections.len() ) {
+			sq.select( subAssembler.toSelection( variables.projections[ 1 ] ) );
+		} else {
+			sq.select( subRoot );
+		}
+
+		// WHERE
+		if ( variables.descriptors.len() ) {
+			var preds = variables.descriptors.map( function( d ) {
+				return subAssembler.toPredicate( arguments.d );
+			} );
+			sq.where( preds.len() eq 1 ? preds[ 1 ] : arguments.hbCb.and( preds ) );
+		}
+
+		return sq;
+	}
+
 	function count() {
 		var hbCb         = variables.ormSession.getCriteriaBuilder();
 		var cq           = hbCb.createQuery();   // untyped — returns Object on getSingleResult
 		var root         = cq.from( variables.entityType );
 		var pathResolver = new PathResolver( root = root, aliases = variables.aliases );
-		var assembler    = new JPAAssembler( cb = hbCb, root = root, pathResolver = pathResolver );
+		var assembler    = new JPAAssembler( cb = hbCb, cq = cq, root = root, pathResolver = pathResolver );
 
 		cq.select( hbCb.count( root ) );
 		applyWhere( cq, hbCb, assembler );
@@ -278,7 +332,7 @@ component accessors="true" {
 
 		var root         = cq.from( variables.entityType );
 		var pathResolver = new PathResolver( root = root, aliases = variables.aliases );
-		var assembler    = new JPAAssembler( cb = hbCb, root = root, pathResolver = pathResolver );
+		var assembler    = new JPAAssembler( cb = hbCb, cq = cq, root = root, pathResolver = pathResolver );
 
 		if ( hasProjections ) {
 			var selections = variables.projections.map( function( p ) {

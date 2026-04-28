@@ -13,8 +13,9 @@
  */
 component {
 
-	JPAAssembler function init( required cb, required root, required pathResolver ) {
+	JPAAssembler function init( required cb, required cq, required root, required pathResolver ) {
 		variables.cb           = arguments.cb;            // jakarta.persistence.criteria.CriteriaBuilder
+		variables.cq           = arguments.cq;            // CriteriaQuery (or Subquery) — needed to spawn nested subqueries
 		variables.root         = arguments.root;          // jakarta.persistence.criteria.Root
 		variables.pathResolver = arguments.pathResolver;
 		return this;
@@ -54,6 +55,32 @@ component {
 
 			case "not":
 				return variables.cb.not( toPredicate( arguments.d.inner ) );
+
+			// ----- subqueries (Subqueries.cfc facade) -----
+
+			case "subqueryIn":
+				var lhsIn  = path( arguments.d.path );
+				var sq     = arguments.d.subquery.renderAsSubquery( variables.cq, variables.cb, lhsIn.getJavaType() );
+				var inExpr = variables.cb.in( lhsIn ).value( sq );
+				return arguments.d.negate ? variables.cb.not( inExpr ) : inExpr;
+
+			case "subqueryExists":
+				var sqEx   = arguments.d.subquery.renderAsSubquery( variables.cq, variables.cb );
+				var exists = variables.cb.exists( sqEx );
+				return arguments.d.negate ? variables.cb.not( exists ) : exists;
+
+			case "subqueryCompare":
+				var lhs = path( arguments.d.path );
+				var sq2 = arguments.d.subquery.renderAsSubquery( variables.cq, variables.cb, lhs.getJavaType() );
+				switch ( arguments.d.op ) {
+					case "eq": return variables.cb.equal(                lhs, sq2 );
+					case "ne": return variables.cb.notEqual(             lhs, sq2 );
+					case "gt": return variables.cb.greaterThan(          lhs, sq2 );
+					case "ge": return variables.cb.greaterThanOrEqualTo( lhs, sq2 );
+					case "lt": return variables.cb.lessThan(             lhs, sq2 );
+					case "le": return variables.cb.lessThanOrEqualTo(    lhs, sq2 );
+				}
+				throw( type="cborm.UnsupportedSubqueryOp", message="Subquery comparison op [#arguments.d.op#] not supported" );
 
 		}
 

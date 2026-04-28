@@ -375,6 +375,79 @@ try {
 	check( "scenario 25 didn't throw", false, e.message );
 }
 
+systemOutput( "[scenario 26] subquery propertyIn — users whose role is in acme org", true );
+try {
+	subq = new cborm.models.criterion.jpa.Subqueries();
+	detached = new cborm.models.criterion.jpa.CriteriaBuilder( entityName="Role", ormSession=hbSession )
+		.eq( "org.name", "acme" )
+		.withProjections( property="id" );
+
+	cb = new cborm.models.criterion.jpa.CriteriaBuilder( entityName="User", ormSession=hbSession );
+	got = cb.add( subq.propertyIn( "role.id", detached ) ).list();
+	// admin (luis, lucia) + editor (brad, curt) — all in acme = 4 users
+	check( "propertyIn returns 4 acme-org users", got.len() eq 4, "got " & got.len() );
+} catch ( any e ) {
+	check( "scenario 26 didn't throw", false, e.message & " :: " & e.detail );
+}
+
+systemOutput( "[scenario 27] subquery propertyNotIn — users whose role is NOT in acme org", true );
+try {
+	subq = new cborm.models.criterion.jpa.Subqueries();
+	detached = new cborm.models.criterion.jpa.CriteriaBuilder( entityName="Role", ormSession=hbSession )
+		.eq( "org.name", "acme" )
+		.withProjections( property="id" );
+
+	cb = new cborm.models.criterion.jpa.CriteriaBuilder( entityName="User", ormSession=hbSession );
+	got = cb.add( subq.propertyNotIn( "role.id", detached ) ).list();
+	// viewer (joel, luminita) — in widget org, not acme = 2 users
+	check( "propertyNotIn returns 2 widget-org users", got.len() eq 2, "got " & got.len() );
+} catch ( any e ) {
+	check( "scenario 27 didn't throw", false, e.message );
+}
+
+systemOutput( "[scenario 28] subquery exists — at least one role in acme exists", true );
+try {
+	subq = new cborm.models.criterion.jpa.Subqueries();
+	detached = new cborm.models.criterion.jpa.CriteriaBuilder( entityName="Role", ormSession=hbSession )
+		.eq( "org.name", "acme" );  // no projection — selects entity, fine for exists
+
+	cb = new cborm.models.criterion.jpa.CriteriaBuilder( entityName="User", ormSession=hbSession );
+	got = cb.add( subq.exists( detached ) ).list();
+	// exists is true for ALL rows (acme roles do exist) → all 7 users
+	check( "exists returns all 7 users", got.len() eq 7, "got " & got.len() );
+} catch ( any e ) {
+	check( "scenario 28 didn't throw", false, e.message );
+}
+
+systemOutput( "[scenario 29] subquery notExists — when subquery returns empty", true );
+try {
+	subq = new cborm.models.criterion.jpa.Subqueries();
+	detached = new cborm.models.criterion.jpa.CriteriaBuilder( entityName="Role", ormSession=hbSession )
+		.eq( "name", "DefinitelyNotARole" );
+
+	cb = new cborm.models.criterion.jpa.CriteriaBuilder( entityName="User", ormSession=hbSession );
+	got = cb.add( subq.notExists( detached ) ).list();
+	// notExists of empty subquery → all 7 users
+	check( "notExists(empty subquery) returns all 7", got.len() eq 7, "got " & got.len() );
+} catch ( any e ) {
+	check( "scenario 29 didn't throw", false, e.message );
+}
+
+systemOutput( "[scenario 30] subquery comparison — find users older than max viewer age", true );
+try {
+	subq = new cborm.models.criterion.jpa.Subqueries();
+	detached = new cborm.models.criterion.jpa.CriteriaBuilder( entityName="User", ormSession=hbSession )
+		.eq( "role.name", "viewer" )
+		.withProjections( max="age" );  // max viewer age = max(joel 22, luminita 30) = 30
+
+	cb = new cborm.models.criterion.jpa.CriteriaBuilder( entityName="User", ormSession=hbSession );
+	got = cb.add( subq.propertyGt( "age", detached ) ).list();
+	// > 30: brad(35), luis(42), lucia(51) = 3 users
+	check( "propertyGt returns 3 users older than max viewer", got.len() eq 3, "got " & got.len() );
+} catch ( any e ) {
+	check( "scenario 30 didn't throw", false, e.message & " :: " & e.detail );
+}
+
 // ---------- summary ----------
 
 systemOutput( "", true );
