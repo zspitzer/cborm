@@ -1916,7 +1916,8 @@ process(
 		if ( useJPACriteria() ) {
 			var builder = new cborm.models.criterion.jpa.CriteriaBuilder(
 				entityName = arguments.entityName,
-				ormSession = getOrm().getSession( arguments.datasource )
+				ormSession = getOrm().getSession( arguments.datasource ),
+				ormService = this
 			);
 			if ( arguments.useQueryCaching ) {
 				builder.cache( true );

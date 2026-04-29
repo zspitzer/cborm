@@ -83,7 +83,8 @@ component accessors="true" extends="cborm.models.criterion.BaseBuilder" {
 		if ( useJPACriteria() ) {
 			var jpaCb = new cborm.models.criterion.jpa.CriteriaBuilder(
 				entityName = arguments.entityName,
-				ormSession = orm.getSession( arguments.datasource )
+				ormSession = orm.getSession( arguments.datasource ),
+				ormService = arguments.ormService
 			);
 			if ( arguments.useQueryCaching ) {
 				jpaCb.cache( true );

@@ -25,9 +25,11 @@
  */
 component accessors="true" {
 
-	property name="entityName"  type="string";
-	property name="descriptors" type="array";
-	property name="orders"      type="array";
+	property name="entityName"   type="string";
+	property name="descriptors"  type="array";
+	property name="orders"       type="array";
+	property name="restrictions" type="any";
+	property name="ormService"   type="any";
 
 	// Join type constants — match cborm's legacy public surface so user code is portable.
 	// FULL_JOIN intentionally absent: jakarta.persistence.criteria.JoinType only exposes INNER/LEFT/RIGHT.
@@ -38,7 +40,8 @@ component accessors="true" {
 	CriteriaBuilder function init(
 		required string entityName,
 		required any    ormSession,    // org.hibernate.Session (also a jakarta.persistence.EntityManager)
-		any             restrictions
+		any             restrictions,
+		any             ormService     // optional — exposed as this.ORMSERVICE for legacy callers that probe builder state
 	) {
 		variables.entityName   = arguments.entityName;
 		variables.ormSession   = arguments.ormSession;
@@ -58,12 +61,21 @@ component accessors="true" {
 		variables.restrictions = isNull( arguments.restrictions )
 			? new Restrictions()
 			: arguments.restrictions;
+		if ( !isNull( arguments.ormService ) ) variables.ormService = arguments.ormService;
 		// Lucee CFC entities use dynamic-map tuplization, so getJavaType() returns
 		// java.util.Map — not usable with cq.from(Class). Look up the EntityDomainType
 		// by name via SessionFactoryImplementor.getJpaMetamodel(). Same pattern our
 		// extension uses internally for EntityLoad / EntityLoadByExample.
 		variables.entityType = arguments.ormSession.getSessionFactory()
 			.getJpaMetamodel().entity( arguments.entityName );
+
+		// Legacy public surface — match the read-only members BaseBuilder exposed via this.*
+		// so callers and test specs that probe builder state continue to work.
+		this.RESTRICTIONS         = variables.restrictions;
+		this.ENTITYNAME           = arguments.entityName;
+		if ( !isNull( arguments.ormService ) ) this.ORMSERVICE = arguments.ormService;
+		this.PROJECTIONS          = "";    // legacy java Projections proxy is gone in H7; placeholder so probes don't error
+		this.DISTINCT_ROOT_ENTITY = "";    // legacy ResultTransformer constant; not honored by JPA, placeholder
 		return this;
 	}
 
@@ -83,6 +95,14 @@ component accessors="true" {
 	function isNotNull( required string property ) { return add( variables.restrictions.isNotNull( property=property ) ); }
 	function isTrue(    required string property ) { return add( variables.restrictions.isTrue(    property=property ) ); }
 	function isFalse(   required string property ) { return add( variables.restrictions.isFalse(   property=property ) ); }
+
+	// Legacy synonyms — BaseBuilder.onMissingMethod accepted these alternate spellings.
+	function isEq( required string property, required any value ) { return eq( arguments.property, arguments.value ); }
+	function isGe( required string property, required any value ) { return ge( arguments.property, arguments.value ); }
+	function isGt( required string property, required any value ) { return gt( arguments.property, arguments.value ); }
+	function isLe( required string property, required any value ) { return le( arguments.property, arguments.value ); }
+	function isLt( required string property, required any value ) { return lt( arguments.property, arguments.value ); }
+	function in( required string property, required any values ) { return isIn( arguments.property, arguments.values ); }
 
 	/**
 	 * Append a raw descriptor (advanced / composition output from Restrictions.$and / $or / isNot).

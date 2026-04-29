@@ -21,7 +21,7 @@ component accessors="true" extends="cborm.models.criterion.BaseBuilder" {
 	 * @alias      The entity alias to use in the subcriteria
 	 * @ormService A reference back to the calling orm service
 	 */
-	DetachedCriteriaBuilder function init(
+	any function init(
 		required string entityName,
 		required string alias,
 		required any ormService
@@ -30,12 +30,29 @@ component accessors="true" extends="cborm.models.criterion.BaseBuilder" {
 		// pipeline uses ordinary CriteriaBuilder instances as detached sources — pass them
 		// to Subqueries.propertyIn / exists / etc. and they materialise as JPA Subquery
 		// nodes inside the parent CriteriaQuery at execution time.
+		//
+		// Build the jpa CriteriaBuilder as an internal delegate, mirror its legacy public
+		// surface to this.*, and return `this`. onMissingMethod forwards method calls to the
+		// delegate so callers and test specs that hold the DetachedCriteriaBuilder reference
+		// keep working without knowing about the swap.
 		if ( useJPACriteria() ) {
 			var orm = arguments.ormService.getOrm();
-			return new cborm.models.criterion.jpa.CriteriaBuilder(
+			variables.jpaDelegate = new cborm.models.criterion.jpa.CriteriaBuilder(
 				entityName = arguments.entityName,
-				ormSession = orm.getSession( orm.getEntityDatasource( arguments.entityName ) )
+				ormSession = orm.getSession( orm.getEntityDatasource( arguments.entityName ) ),
+				ormService = arguments.ormService
 			);
+			variables.entityName = arguments.entityName;
+			variables.ormService = arguments.ormService;
+			this.RESTRICTIONS         = variables.jpaDelegate.getRestrictions();
+			this.ENTITYNAME           = arguments.entityName;
+			this.ORMSERVICE           = arguments.ormService;
+			this.PROJECTIONS          = "";
+			this.DISTINCT_ROOT_ENTITY = "";
+			this.INNER_JOIN           = variables.jpaDelegate.INNER_JOIN;
+			this.LEFT_JOIN            = variables.jpaDelegate.LEFT_JOIN;
+			this.RIGHT_JOIN           = variables.jpaDelegate.RIGHT_JOIN;
+			return this;
 		}
 
 		// create new java DetachedCriteria
@@ -67,6 +84,20 @@ component accessors="true" extends="cborm.models.criterion.BaseBuilder" {
 	 * @missingMethodArguments
 	 */
 	any function onMissingMethod( required string missingMethodName, required struct missingMethodArguments ){
+		// JPA mode: forward to the held delegate. If the delegate returned itself (chain
+		// pattern), re-box as `this` so callers chaining off the DetachedCriteriaBuilder
+		// reference stay on this object instead of leaking the jpa instance.
+		if ( !isNull( variables.jpaDelegate ) ) {
+			var result = invoke(
+				variables.jpaDelegate,
+				arguments.missingMethodName,
+				arguments.missingMethodArguments
+			);
+			if ( isNull( result ) ) return;
+			if ( isObject( result ) && result.equals( variables.jpaDelegate ) ) return this;
+			return result;
+		}
+
 		// get the restriction/new criteria
 		var r = createRestriction( argumentCollection = arguments );
 
@@ -107,6 +138,7 @@ component accessors="true" extends="cborm.models.criterion.BaseBuilder" {
 	 * @see https://docs.jboss.org/hibernate/stable/orm/javadocs/org/hibernate/Criteria.html
 	 */
 	any function getNativeCriteria(){
+		if ( !isNull( variables.jpaDelegate ) ) return variables.jpaDelegate;
 		var ormsession = variables.ORMService.getORM().getSession( variables.ormService.getDatasource() );
 		return variables.nativeCriteria.getExecutableCriteria( ormsession );
 	}
@@ -119,6 +151,13 @@ component accessors="true" extends="cborm.models.criterion.BaseBuilder" {
 	 * @return org.hibernate.criterion.Projection
 	 */
 	any function createDetachedSQLProjection(){
+		if ( !isNull( variables.jpaDelegate ) ) {
+			throw(
+				type    = "cborm.NotImplemented",
+				message = "createDetachedSQLProjection is not yet supported on Hibernate 7+",
+				detail  = "Legacy SQL projection extraction relied on org.hibernate.criterion.* internals removed in H7. Track in the cborm h73 polyfill backlog."
+			);
+		}
 		var sqlHelper   = getSqlHelper();
 		// get the sql with replaced parameters
 		var sql         = sqlHelper.getSql( returnExecutableSql = true );
@@ -152,6 +191,14 @@ component accessors="true" extends="cborm.models.criterion.BaseBuilder" {
 		required string alias,
 		numeric joinType = this.INNER_JOIN
 	){
+		if ( !isNull( variables.jpaDelegate ) ) {
+			variables.jpaDelegate.createAlias(
+				arguments.associationName,
+				arguments.alias,
+				arguments.joinType
+			);
+			return this;
+		}
 		return super.createAlias(
 			arguments.associationName,
 			arguments.alias,
@@ -170,6 +217,10 @@ component accessors="true" extends="cborm.models.criterion.BaseBuilder" {
 		string alias,
 		numeric joinType = this.INNER_JOIN
 	){
+		if ( !isNull( variables.jpaDelegate ) ) {
+			invoke( variables.jpaDelegate, "createCriteria", arguments );
+			return this;
+		}
 		if ( structKeyExists( arguments, "alias" ) ) {
 			return super.createCriteria(
 				associationName = arguments.associationName,
@@ -190,6 +241,10 @@ component accessors="true" extends="cborm.models.criterion.BaseBuilder" {
 	 * @maxResults The max results to limit by
 	 */
 	any function maxResults( required numeric maxResults ){
+		if ( !isNull( variables.jpaDelegate ) ) {
+			variables.jpaDelegate.maxResults( arguments.maxResults );
+			return this;
+		}
 		getNativeCriteria().setMaxResults( javacast( "int", arguments.maxResults ) );
 		if ( getSqlHelper().canLogLimitOffset() ) {
 			// process interception
