@@ -26,6 +26,18 @@ component accessors="true" extends="cborm.models.criterion.BaseBuilder" {
 		required string alias,
 		required any ormService
 	){
+		// Hibernate 7+ removed org.hibernate.criterion.DetachedCriteria. The JPA descriptor
+		// pipeline uses ordinary CriteriaBuilder instances as detached sources — pass them
+		// to Subqueries.propertyIn / exists / etc. and they materialise as JPA Subquery
+		// nodes inside the parent CriteriaQuery at execution time.
+		if ( useJPACriteria() ) {
+			var orm = arguments.ormService.getOrm();
+			return new cborm.models.criterion.jpa.CriteriaBuilder(
+				entityName = arguments.entityName,
+				ormSession = orm.getSession( orm.getEntityDatasource( arguments.entityName ) )
+			);
+		}
+
 		// create new java DetachedCriteria
 		var detachedCriteria = arguments.ormService
 			.buildJavaProxy( "org.hibernate.criterion.DetachedCriteria" )

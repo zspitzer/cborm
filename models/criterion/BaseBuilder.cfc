@@ -823,4 +823,14 @@ component accessors="true" {
 		);
 	}
 
+	/**
+	 * Whether the active Hibernate runtime requires the JPA Criteria pipeline (H7+).
+	 * Used by subclass init() methods to short-circuit and return a JPA-backed builder
+	 * when the legacy org.hibernate.criterion.* package is gone.
+	 */
+	private boolean function useJPACriteria(){
+		var version = createObject( "java", "org.hibernate.Version" ).getVersionString();
+		return val( listFirst( version, "." ) ) gte 7;
+	}
+
 }

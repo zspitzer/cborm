@@ -76,6 +76,22 @@ component accessors="true" extends="cborm.models.criterion.BaseBuilder" {
 			arguments.datasource = orm.getEntityDatasource( arguments.entityName );
 		}
 
+		// Hibernate 7+ removed Session.createCriteria() and the entire criterion API.
+		// Anything that constructs this legacy builder directly (test specs, user code
+		// that bypasses BaseORMService.newCriteria) gets routed to the JPA-backed
+		// builder instead — same fluent surface, returns descriptor-based execution.
+		if ( useJPACriteria() ) {
+			var jpaCb = new cborm.models.criterion.jpa.CriteriaBuilder(
+				entityName = arguments.entityName,
+				ormSession = orm.getSession( arguments.datasource )
+			);
+			if ( arguments.useQueryCaching ) {
+				jpaCb.cache( true );
+				if ( arguments.queryCacheRegion.len() ) jpaCb.cacheRegion( arguments.queryCacheRegion );
+			}
+			return jpaCb;
+		}
+
 		// setup basebuilder with criteria query and restrictions
 		super.init(
 			entityName   = arguments.entityName,

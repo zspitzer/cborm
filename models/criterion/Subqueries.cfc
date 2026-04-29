@@ -27,6 +27,14 @@ component
 	 * @detachedCriteria Optional detached criteria object to bind this transient with
 	 */
 	Subqueries function init( required javaProxy, detachedCriteria ){
+		// H7+ removed org.hibernate.criterion.Subqueries. Direct instantiation
+		// (e.g. via WireBox `Subqueries@cborm` for legacy detached-criteria flows)
+		// gets the JPA-backed facade — propertyIn / exists / etc. produce descriptors
+		// that materialise as jakarta.persistence.criteria.Subquery at execution.
+		if ( useJPACriteria() ) {
+			return new cborm.models.criterion.jpa.Subqueries();
+		}
+
 		variables.subqueries = arguments.javaProxy.build( "org.hibernate.criterion.Subqueries" );
 		super.init( argumentCollection = arguments );
 

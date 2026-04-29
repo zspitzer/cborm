@@ -51,9 +51,22 @@ component access="true" {
 	 * @javaProxy.inject JavaProxyBuilder@cborm
 	 */
 	Restrictions function init( required javaProxy ){
+		// Hibernate 7+ removed the entire org.hibernate.criterion.* package — including
+		// org.hibernate.criterion.Restrictions itself. Direct instantiation of this CFC
+		// (e.g. user code or test specs that bypass BaseORMService.getRestrictions()) would
+		// throw at init time. Detect H7+ here and return the JPA-backed facade instead;
+		// callers using the fluent API (eq/like/$or/etc.) get drop-in compatibility.
+		if ( useJPACriteria() ) {
+			return new cborm.models.criterion.jpa.Restrictions();
+		}
 		variables.javaProxy    = arguments.javaProxy;
 		variables.restrictions = arguments.javaProxy.build( "org.hibernate.criterion.Restrictions" );
 		return this;
+	}
+
+	private boolean function useJPACriteria(){
+		var version = createObject( "java", "org.hibernate.Version" ).getVersionString();
+		return val( listFirst( version, "." ) ) gte 7;
 	}
 
 	/**
