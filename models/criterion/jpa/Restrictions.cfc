@@ -106,7 +106,26 @@ component singleton {
 	}
 
 	function sqlRestriction( required string sql, array params = [] ) {
-		return sql( argumentCollection = arguments );
+		// Call via `this.` to disambiguate from the local `sql` argument.
+		return this.sql( argumentCollection = arguments );
+	}
+
+	// ----- legacy H5 helpers — no JPA equivalent -----
+
+	function getNativeClass() {
+		throw(
+			type    = "cborm.JPA.NotImplemented",
+			message = "Restrictions.getNativeClass() is not supported on Hibernate 7+",
+			detail  = "org.hibernate.criterion.Restrictions was removed in H6. The JPA pipeline produces descriptor CFCs (SimpleExpression / NotExpression / etc.) instead of Java Restriction instances; isInstanceOf( descriptor, ""SimpleExpression"" ) matches by simple name."
+		);
+	}
+
+	function buildHibernateType( required type ) {
+		throw(
+			type    = "cborm.JPA.NotImplemented",
+			message = "Restrictions.buildHibernateType() is not supported on Hibernate 7+",
+			detail  = "org.hibernate.type.* was reorganised in H6 — fromStringValue / IntegerType / StringType etc. are gone. JPA performs its own parameter coercion; pass values directly to predicates."
+		);
 	}
 
 	// ----- aliases (matches legacy onMissingMethod) -----
