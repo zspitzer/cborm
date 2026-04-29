@@ -1,18 +1,19 @@
 /**
  * Hibernate 7+ replacement for cborm.models.criterion.Restrictions.
  *
- * Returns *descriptor structs*, not Hibernate Criterion objects. A descriptor
- * is plain CFML data describing the user's intent ({ type: "eq", path: ..., value: ... });
- * the JPAAssembler converts the tree into jakarta.persistence.criteria.Predicate
- * at execution time, by which point the active Session/Root are known.
+ * Returns *typed descriptor CFCs* under cborm.models.criterion.jpa.descriptors.* —
+ * each one's simple name mirrors a legacy org.hibernate.criterion class
+ * (SimpleExpression / LikeExpression / NotExpression / SimpleSubqueryExpression / etc.)
+ * so legacy test assertions like `isInstanceOf( r, "NotExpression" )` keep working.
  *
- * Public method signatures match the legacy Restrictions.cfc surface so this
- * is a drop-in replacement when getHibernateVersion() >= 7.
- *
- * Path strings (e.g. "role.name") are kept verbatim — PathResolver auto-promotes
- * dotted paths into JPA join chains at assemble time.
+ * The descriptor objects are pure data; they hold a `type` field plus payload (path,
+ * value, op, etc.). The JPAAssembler dispatches on `descriptor.type` and converts
+ * the tree into jakarta.persistence.criteria.Predicate at execution time, by which
+ * point the active Session/Root are known.
  */
 component singleton {
+
+	import cborm.models.criterion.jpa.descriptors.*;
 
 	Restrictions function init() {
 		return this;
@@ -20,43 +21,21 @@ component singleton {
 
 	// ----- comparison -----
 
-	function isEq( required string property, required any propertyValue ) {
-		return { "type": "eq", "path": arguments.property, "value": arguments.propertyValue };
-	}
-
-	function ne( required string property, required any propertyValue ) {
-		return { "type": "ne", "path": arguments.property, "value": arguments.propertyValue };
-	}
-
-	function isGt( required string property, required any propertyValue ) {
-		return { "type": "gt", "path": arguments.property, "value": arguments.propertyValue };
-	}
-
-	function isGe( required string property, required any propertyValue ) {
-		return { "type": "ge", "path": arguments.property, "value": arguments.propertyValue };
-	}
-
-	function isLt( required string property, required any propertyValue ) {
-		return { "type": "lt", "path": arguments.property, "value": arguments.propertyValue };
-	}
-
-	function isLe( required string property, required any propertyValue ) {
-		return { "type": "le", "path": arguments.property, "value": arguments.propertyValue };
-	}
+	function isEq( required string property, required any propertyValue ) { return new SimpleExpression( type="eq", path=arguments.property, value=arguments.propertyValue ); }
+	function ne(   required string property, required any propertyValue ) { return new SimpleExpression( type="ne", path=arguments.property, value=arguments.propertyValue ); }
+	function isGt( required string property, required any propertyValue ) { return new SimpleExpression( type="gt", path=arguments.property, value=arguments.propertyValue ); }
+	function isGe( required string property, required any propertyValue ) { return new SimpleExpression( type="ge", path=arguments.property, value=arguments.propertyValue ); }
+	function isLt( required string property, required any propertyValue ) { return new SimpleExpression( type="lt", path=arguments.property, value=arguments.propertyValue ); }
+	function isLe( required string property, required any propertyValue ) { return new SimpleExpression( type="le", path=arguments.property, value=arguments.propertyValue ); }
 
 	function between( required string property, required any minValue, required any maxValue ) {
-		return { "type": "between", "path": arguments.property, "lo": arguments.minValue, "hi": arguments.maxValue };
+		return new BetweenExpression( path=arguments.property, lo=arguments.minValue, hi=arguments.maxValue );
 	}
 
 	// ----- string -----
 
-	function like( required string property, required string propertyValue ) {
-		return { "type": "like", "path": arguments.property, "value": arguments.propertyValue };
-	}
-
-	function ilike( required string property, required string propertyValue ) {
-		return { "type": "ilike", "path": arguments.property, "value": arguments.propertyValue };
-	}
+	function like(  required string property, required string propertyValue ) { return new LikeExpression( type="like",  path=arguments.property, value=arguments.propertyValue ); }
+	function ilike( required string property, required string propertyValue ) { return new LikeExpression( type="ilike", path=arguments.property, value=arguments.propertyValue ); }
 
 	// ----- collections / null / membership -----
 
@@ -64,98 +43,60 @@ component singleton {
 		if ( isSimpleValue( arguments.propertyValue ) ) {
 			arguments.propertyValue = listToArray( arguments.propertyValue );
 		}
-		return { "type": "in", "path": arguments.property, "values": arguments.propertyValue };
+		return new InExpression( path=arguments.property, values=arguments.propertyValue );
 	}
 
-	function isNull( required string property ) {
-		return { "type": "isNull", "path": arguments.property };
-	}
+	function isNull(    required string property ) { return new NullExpression( type="isNull",    path=arguments.property ); }
+	function isNotNull( required string property ) { return new NullExpression( type="isNotNull", path=arguments.property ); }
 
-	function isNotNull( required string property ) {
-		return { "type": "isNotNull", "path": arguments.property };
-	}
-
-	function isTrue( required string property ) {
-		return { "type": "eq", "path": arguments.property, "value": javacast( "boolean", true ) };
-	}
-
-	function isFalse( required string property ) {
-		return { "type": "eq", "path": arguments.property, "value": javacast( "boolean", false ) };
-	}
+	function isTrue(  required string property ) { return new SimpleExpression( type="eq", path=arguments.property, value=javacast( "boolean", true  ) ); }
+	function isFalse( required string property ) { return new SimpleExpression( type="eq", path=arguments.property, value=javacast( "boolean", false ) ); }
 
 	// ----- property comparisons -----
 
-	function eqProperty( required string property, required string otherProperty ) { return cmpProperty( "eq", arguments.property, arguments.otherProperty ); }
-	function neProperty( required string property, required string otherProperty ) { return cmpProperty( "ne", arguments.property, arguments.otherProperty ); }
-	function gtProperty( required string property, required string otherProperty ) { return cmpProperty( "gt", arguments.property, arguments.otherProperty ); }
-	function geProperty( required string property, required string otherProperty ) { return cmpProperty( "ge", arguments.property, arguments.otherProperty ); }
-	function ltProperty( required string property, required string otherProperty ) { return cmpProperty( "lt", arguments.property, arguments.otherProperty ); }
-	function leProperty( required string property, required string otherProperty ) { return cmpProperty( "le", arguments.property, arguments.otherProperty ); }
-
-	private function cmpProperty( required string op, required string left, required string right ) {
-		return { "type": "cmpProperty", "op": arguments.op, "left": arguments.left, "right": arguments.right };
-	}
+	function eqProperty( required string property, required string otherProperty ) { return new PropertyExpression( op="eq", left=arguments.property, right=arguments.otherProperty ); }
+	function neProperty( required string property, required string otherProperty ) { return new PropertyExpression( op="ne", left=arguments.property, right=arguments.otherProperty ); }
+	function gtProperty( required string property, required string otherProperty ) { return new PropertyExpression( op="gt", left=arguments.property, right=arguments.otherProperty ); }
+	function geProperty( required string property, required string otherProperty ) { return new PropertyExpression( op="ge", left=arguments.property, right=arguments.otherProperty ); }
+	function ltProperty( required string property, required string otherProperty ) { return new PropertyExpression( op="lt", left=arguments.property, right=arguments.otherProperty ); }
+	function leProperty( required string property, required string otherProperty ) { return new PropertyExpression( op="le", left=arguments.property, right=arguments.otherProperty ); }
 
 	// ----- identifier -----
 
-	function idEq( required any propertyValue ) {
-		return { "type": "idEq", "value": arguments.propertyValue };
-	}
+	function idEq( required any propertyValue ) { return new IdentifierEqExpression( value=arguments.propertyValue ); }
 
-	// ----- collection (associations as properties) -----
+	// ----- collection (associations) -----
 
-	function isEmpty(    required string property ) { return { "type": "isEmpty",    "path": arguments.property }; }
-	function isNotEmpty( required string property ) { return { "type": "isNotEmpty", "path": arguments.property }; }
+	function isEmpty(    required string property ) { return new EmptyExpression( type="isEmpty",    path=arguments.property ); }
+	function isNotEmpty( required string property ) { return new EmptyExpression( type="isNotEmpty", path=arguments.property ); }
 
-	function sizeEq( required string property, required numeric size ) { return sizeCmp( "eq", arguments.property, arguments.size ); }
-	function sizeNe( required string property, required numeric size ) { return sizeCmp( "ne", arguments.property, arguments.size ); }
-	function sizeGt( required string property, required numeric size ) { return sizeCmp( "gt", arguments.property, arguments.size ); }
-	function sizeGe( required string property, required numeric size ) { return sizeCmp( "ge", arguments.property, arguments.size ); }
-	function sizeLt( required string property, required numeric size ) { return sizeCmp( "lt", arguments.property, arguments.size ); }
-	function sizeLe( required string property, required numeric size ) { return sizeCmp( "le", arguments.property, arguments.size ); }
-
-	private function sizeCmp( required string op, required string property, required numeric size ) {
-		return { "type": "sizeCmp", "op": arguments.op, "path": arguments.property, "size": arguments.size };
-	}
+	function sizeEq( required string property, required numeric size ) { return new SizeExpression( op="eq", path=arguments.property, size=arguments.size ); }
+	function sizeNe( required string property, required numeric size ) { return new SizeExpression( op="ne", path=arguments.property, size=arguments.size ); }
+	function sizeGt( required string property, required numeric size ) { return new SizeExpression( op="gt", path=arguments.property, size=arguments.size ); }
+	function sizeGe( required string property, required numeric size ) { return new SizeExpression( op="ge", path=arguments.property, size=arguments.size ); }
+	function sizeLt( required string property, required numeric size ) { return new SizeExpression( op="lt", path=arguments.property, size=arguments.size ); }
+	function sizeLe( required string property, required numeric size ) { return new SizeExpression( op="le", path=arguments.property, size=arguments.size ); }
 
 	// ----- composition -----
 
-	function conjunction( required array restrictionValues ) {
-		return { "type": "and", "parts": arguments.restrictionValues };
-	}
-
-	function disjunction( required array restrictionValues ) {
-		return { "type": "or", "parts": arguments.restrictionValues };
-	}
-
-	function isNot( required any criterion ) {
-		return { "type": "not", "inner": arguments.criterion };
-	}
+	function conjunction( required array restrictionValues ) { return new Conjunction( parts=arguments.restrictionValues ); }
+	function disjunction( required array restrictionValues ) { return new Disjunction( parts=arguments.restrictionValues ); }
+	function isNot(       required any   criterion         ) { return new NotExpression( inner=arguments.criterion ); }
 
 	function $and() {
 		var parts = [];
-		for ( var k in arguments ) {
-			arrayAppend( parts, arguments[ k ] );
-		}
+		for ( var k in arguments ) arrayAppend( parts, arguments[ k ] );
 		return conjunction( parts );
 	}
 
 	function $or() {
 		var parts = [];
-		for ( var k in arguments ) {
-			arrayAppend( parts, arguments[ k ] );
-		}
+		for ( var k in arguments ) arrayAppend( parts, arguments[ k ] );
 		return disjunction( parts );
 	}
 
 	// ----- arbitrary SQL fragments (NOT supported on H7) -----
 
-	/**
-	 * TODO: legacy Restrictions.sql injected an arbitrary SQL fragment into the WHERE
-	 * clause. JPA Criteria has no clean equivalent — `cb.function()` covers named SQL
-	 * functions but not free-form fragments. Users who need raw SQL should drop down
-	 * to HQL via ormExecuteQuery() instead.
-	 */
 	function sql( required string sql, array params = [] ) {
 		throw(
 			type    = "cborm.JPA.NotImplemented",
@@ -164,7 +105,6 @@ component singleton {
 		);
 	}
 
-	/** @deprecated alias of sql(). Same H7 limitation applies. */
 	function sqlRestriction( required string sql, array params = [] ) {
 		return sql( argumentCollection = arguments );
 	}

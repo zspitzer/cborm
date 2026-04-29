@@ -1,10 +1,12 @@
 /**
  * Hibernate 7+ replacement for cborm.models.criterion.Subqueries.
  *
- * Returns descriptor structs that hold a reference to a "detached" CriteriaBuilder
- * (just a regular CriteriaBuilder whose .list() never gets called). At assembly time
- * the JPAAssembler invokes the detached builder's renderAsSubquery() to materialise
- * a JPA jakarta.persistence.criteria.Subquery inside the parent CriteriaQuery.
+ * Returns typed descriptor CFCs (SimpleSubqueryExpression / ExistsSubqueryExpression /
+ * PropertySubqueryExpression) whose simple names match the legacy Hibernate criterion
+ * subquery classes. Each descriptor holds a reference to a "detached" CriteriaBuilder
+ * (a CriteriaBuilder whose .list() is never called); the JPAAssembler invokes its
+ * renderAsSubquery() at execution time to materialise a JPA Subquery inside the
+ * parent CriteriaQuery.
  *
  * Common pattern:
  *   detached = new CriteriaBuilder( entityName="Role", ormSession=session )
@@ -19,20 +21,17 @@
  */
 component singleton {
 
+	import cborm.models.criterion.jpa.descriptors.*;
+
 	Subqueries function init() {
 		return this;
 	}
 
-	function propertyIn( required string property, required any detachedBuilder ) {
-		return { "type": "subqueryIn", "path": arguments.property, "subquery": arguments.detachedBuilder, "negate": false };
-	}
+	function propertyIn(    required string property, required any detachedBuilder ) { return new SimpleSubqueryExpression( path=arguments.property, subquery=arguments.detachedBuilder, negate=false ); }
+	function propertyNotIn( required string property, required any detachedBuilder ) { return new SimpleSubqueryExpression( path=arguments.property, subquery=arguments.detachedBuilder, negate=true  ); }
 
-	function propertyNotIn( required string property, required any detachedBuilder ) {
-		return { "type": "subqueryIn", "path": arguments.property, "subquery": arguments.detachedBuilder, "negate": true };
-	}
-
-	function exists(    required any detachedBuilder ) { return { "type": "subqueryExists", "subquery": arguments.detachedBuilder, "negate": false }; }
-	function notExists( required any detachedBuilder ) { return { "type": "subqueryExists", "subquery": arguments.detachedBuilder, "negate": true  }; }
+	function exists(    required any detachedBuilder ) { return new ExistsSubqueryExpression( subquery=arguments.detachedBuilder, negate=false ); }
+	function notExists( required any detachedBuilder ) { return new ExistsSubqueryExpression( subquery=arguments.detachedBuilder, negate=true  ); }
 
 	function propertyEq( required string property, required any detachedBuilder ) { return cmp( "eq", arguments.property, arguments.detachedBuilder ); }
 	function propertyNe( required string property, required any detachedBuilder ) { return cmp( "ne", arguments.property, arguments.detachedBuilder ); }
@@ -42,12 +41,7 @@ component singleton {
 	function propertyLe( required string property, required any detachedBuilder ) { return cmp( "le", arguments.property, arguments.detachedBuilder ); }
 
 	private function cmp( required string op, required string property, required any detachedBuilder ) {
-		return {
-			"type"     : "subqueryCompare",
-			"op"       : arguments.op,
-			"path"     : arguments.property,
-			"subquery" : arguments.detachedBuilder
-		};
+		return new PropertySubqueryExpression( op=arguments.op, path=arguments.property, subquery=arguments.detachedBuilder );
 	}
 
 }
